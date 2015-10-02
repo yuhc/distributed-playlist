@@ -1,4 +1,4 @@
-package com.utexas.cs;
+package edu.utexas.cs.threepc;
 
 import java.io.File;
 import java.io.IOException;
@@ -7,12 +7,13 @@ import java.io.PrintWriter;
 /**
  * Created by zhitingz on 10/2/15.
  */
-public class Process {
+public class Worker {
     private int process_id;
     private int viewNumber;
     private File DTLog;
+    private int messageCounter;
 
-    public Process(int process_id) {
+    public Worker(int process_id) {
         this.process_id = process_id;
         try {
             DTLog = new File("log_" + process_id + ".txt");
@@ -33,6 +34,10 @@ public class Process {
     }
 
     public void edit(String songName, String newSongName, String newSongURL) {
+
+    }
+
+    public static void main(String args[]) {
 
     }
 
