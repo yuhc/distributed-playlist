@@ -1,10 +1,12 @@
 package edu.utexas.cs.threepc;
 
-import java.io.IOException;
+import java.io.*;
 import java.lang.reflect.Array;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.lang.Process;
+import java.util.Scanner;
 
 public class Master {
 
@@ -16,10 +18,6 @@ public class Master {
     public Master() {
         processList = new ArrayList<Process>();
         totalProcess = 0;
-    }
-
-    public Master(String instruction_log) {
-
     }
 
     /**
@@ -80,11 +78,11 @@ public class Master {
         }
     }
 
-    public void partialMessage(int process_id, int num_of_messages) {
+    public void partialMessage(int processId, int numMessages) {
 
     }
 
-    public void resumeMessages (int process_id) {
+    public void resumeMessages (int processId) {
 
     }
 
@@ -92,16 +90,81 @@ public class Master {
 
     }
 
-    public void rejectNextChange(int process_id) {
+    public void rejectNextChange(int processId) {
 
+    }
+
+    public static void handleRequest(Master m, String req) {
+        String[] splits = req.split(" ");
+        switch (splits[0]) {
+            case "cp":
+                int numProcess = Integer.parseInt(splits[1]);
+                m.createProcesses(numProcess);
+                break;
+            case "k":
+                int killProcessId = Integer.parseInt(splits[1]);
+                m.kill(killProcessId);
+                break;
+            case "ka":
+                m.killAll();
+                break;
+            case "kl":
+                m.killLeader();
+                break;
+            case "r":
+                int reviveProcessId = Integer.parseInt(splits[1]);
+                m.revive(reviveProcessId);
+                break;
+            case "rl":
+                m.reviveLast();
+                break;
+            case "ra":
+                m.reviveAll();
+                break;
+            case "pm":
+                int pauseProcessId = Integer.parseInt(splits[1]);
+                int numMessages = Integer.parseInt(splits[2]);
+                m.partialMessage(pauseProcessId, numMessages);
+                break;
+            case "rm":
+                int resumeProcessId = Integer.parseInt(splits[1]);
+                m.resumeMessages(resumeProcessId);
+                break;
+            case "ac":
+                m.allClear();
+                break;
+            case "rnc":
+                int rejectProcessId = Integer.parseInt(splits[1]);
+                m.rejectNextChange(rejectProcessId);
+                break;
+            default:
+                System.err.println("Cannot recognize this command: " + splits[0]);
+                System.exit(-1);
+                break;
+        }
     }
 
     public static void main(String[] args) {
 	// write your code here
-
-
-        while (true) {
-
+        Master m = new Master();
+        if (args.length != 0) {
+            File f = new File(args[0]);
+            try (BufferedReader br = new BufferedReader(new FileReader("command.txt"))) {
+                String line = null;
+                while ((line = br.readLine()) != null) {
+                    handleRequest(m, line);
+                }
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        } else {
+            Scanner sc = new Scanner(System.in);
+            while (sc.hasNextLine()) {
+                String line = sc.nextLine();
+                handleRequest(m, line);
+            }
         }
     }
 }
