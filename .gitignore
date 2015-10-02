@@ -3,3 +3,5 @@
 materials/NetFramework
 3pc.iml
 ._src
+out
+out/*
