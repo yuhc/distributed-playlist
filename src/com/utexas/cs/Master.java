@@ -1,7 +1,11 @@
 package com.utexas.cs;
 
 public class Master {
-    
+
+    public Master() {
+
+    }
+
     public Master(String instruction_log) {
 
     }
