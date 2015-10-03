@@ -49,6 +49,7 @@ public class Worker {
     public static void main(String args[]) {
         int processId = Integer.parseInt(args[0]);
         Worker w = new Worker(processId);
+        System.err.println(processId);
 
     }
 

@@ -7,3 +7,5 @@ materials/*.jar
 ._src
 out
 out/*
+*.class
+*.properties

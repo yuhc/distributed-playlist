@@ -3,6 +3,7 @@
  * purposes as long as attribution is maintained.
  * 
  * @author: Isaac Levy
+ * @modifier: Hangchen Yu
  */
 
 package edu.utexas.cs.netutil;
@@ -19,37 +20,24 @@ public class Config {
 	/**
 	 * Loads config from a file.  Optionally puts in 'procNum' if in file.
 	 * See sample file for syntax
-	 * @param filename
+	 * @param no
+	 * @param nProc
+	 * @param host
+	 * @param basePort
 	 * @throws FileNotFoundException
 	 * @throws IOException
 	 */
-	public Config(String filename) throws FileNotFoundException, IOException {
-		logger = Logger.getLogger("NetFramework");
+	public Config(int no, int nProc, String host, int basePort) throws FileNotFoundException, IOException {
+		procNum = no;
+		logger = Logger.getLogger("data/process"+procNum+".log");
 
-		Properties prop = new Properties();
-		prop.load(new FileInputStream(filename));
-		numProcesses = loadInt(prop,"NumProcesses");
+		numProcesses = nProc;
 		addresses = new InetAddress[numProcesses];
 		ports = new int[numProcesses];
 		for (int i=0; i < numProcesses; i++) {
-			ports[i] = loadInt(prop, "port" + i);
-			addresses[i] = InetAddress.getByName(prop.getProperty("host" + i).trim());
+			ports[i] = basePort + i;
+			addresses[i] = InetAddress.getByName(host);
 		}
-		if (prop.getProperty("ProcNum") != null) {
-			procNum = loadInt(prop,"procNum");
-		} else {
-			logger.info("procNum not loaded from file");
-		}
-	}
-	
-	private int loadInt(Properties prop, String s) {
-		return Integer.parseInt(prop.getProperty(s.trim()));
-	}
-	
-	/**
-	 * Default constructor for those who want to populate config file manually
-	 */
-	public Config() {
 	}
 
 	/**

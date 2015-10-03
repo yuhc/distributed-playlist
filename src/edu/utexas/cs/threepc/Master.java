@@ -18,6 +18,8 @@ public class Master {
 
     public Master() {
         processList = new ArrayList<Process>();
+        processList.add(0, null);
+        System.err.println("Master started");
         totalProcess = leader = lastKilled = 0;
         delayTime = 0;
     }
@@ -28,18 +30,32 @@ public class Master {
      */
     public void createProcesses(int n) {
         Process p;
-        totalProcess = n;
-        for (int i = 0; i < n; i++) {
-            if ((p = processList.get(i)) != null) p.destroy();
-            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "Worker.jar", ""+n, "1");
+        killAll();
+        for (int i = 1; i <= n; i++) {
+            ProcessBuilder pb = new ProcessBuilder("java", "-cp", ".", "Worker", ""+n, "1");
             try {
                 processList.add(i, pb.start());
-
+                System.err.println("Process "+i+" ["+pb+"] created");
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
-        assignLeader(0);
+        totalProcess = n;
+        assignLeader(1);
+    }
+
+    /**
+     * Used for debugging
+     */
+    public void printParameters() {
+        System.err.print("process_num=" + totalProcess + ", leader_no=" + leader + ", last_killed_no=" + lastKilled + ", existed_process=[");
+        boolean existed = false;
+        for (int i = 1; i <= totalProcess; i++) {
+            if (processList.get(i) != null) System.err.print(i + " ");
+            existed = true;
+        }
+        if (!existed) System.err.println("null]");
+        else System.err.println("]");
     }
 
     /**
@@ -54,6 +70,7 @@ public class Master {
         else {
             p.destroy();
             processList.set(processId, null);
+            System.err.println("Proces "+processId+" killed");
             lastKilled = processId;
         }
     }
@@ -62,7 +79,7 @@ public class Master {
      * Kill all processes
      */
     public void killAll() {
-        for (int i = 0; i < totalProcess; i++) {
+        for (int i = 1; i <= totalProcess; i++) {
             kill(i);
         }
     }
@@ -71,6 +88,11 @@ public class Master {
      * Kill coordinator
      */
     public void killLeader() {
+        if (leader == 0 || leader > processList.size()) {
+            System.err.println("Coordinator not exists");
+            return;
+        }
+
         Process p = processList.get(leader);
         if (p == null) {
             System.err.println("Proces "+leader+" not exists");
@@ -99,7 +121,7 @@ public class Master {
     }
 
     public void reviveAll() {
-        for (int i = 0; i < totalProcess; i++) {
+        for (int i = 1; i <= totalProcess; i++) {
             revive(i);
         }
     }
@@ -151,8 +173,6 @@ public class Master {
 
     public static void handleRequest(Master m, String req) {
         String[] splits = req.split(" ");
-        int firstParam = Integer.parseInt(splits[1]);
-        int secondParam = Integer.parseInt(splits[2]);
 
         switch (splits[0]) {
             case "cp":
@@ -204,11 +224,16 @@ public class Master {
                 m.delay(delayTime);
                 break;
             case "da":
-                m.deathAfter(firstParam, secondParam);
+                int numReceiveMessages = Integer.parseInt(splits[1]);
+                int killSelfProcessId = Integer.parseInt(splits[2]);
+                m.deathAfter(numReceiveMessages, killSelfProcessId);
+                break;
+            case "pp":
+                m.printParameters();
                 break;
             default:
                 System.err.println("Cannot recognize this command: " + splits[0]);
-                System.exit(-1);
+                //System.exit(-1);
                 break;
         }
     }
