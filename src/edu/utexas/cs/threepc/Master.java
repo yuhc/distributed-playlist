@@ -32,16 +32,34 @@ public class Master {
         Process p;
         killAll();
         for (int i = 1; i <= n; i++) {
-            ProcessBuilder pb = new ProcessBuilder("java", "-cp", ".", "Worker", ""+n, "1");
+            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+i, "1").redirectErrorStream(true);
             try {
-                processList.add(i, pb.start());
-                System.err.println("Process "+i+" ["+pb+"] created");
+                p = pb.start();
+                System.err.println("Process " + i + " [" + p + "] started");
+                inheritIO(p.getInputStream(), System.err);
+                processList.add(i, p);
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
         totalProcess = n;
         assignLeader(1);
+    }
+
+    /**
+     * Redirect ProcessBuilder's output to System.err
+     * @param src
+     * @param dest
+     */
+    private static void inheritIO(final InputStream src, final PrintStream dest) {
+        new Thread(new Runnable() {
+            public void run() {
+                Scanner sc = new Scanner(src);
+                while (sc.hasNextLine()) {
+                    dest.println(sc.nextLine());
+                }
+            }
+        }).start();
     }
 
     /**
@@ -107,7 +125,7 @@ public class Master {
             System.err.println("Proces "+processId+" alrealy exists");
         }
         else {
-            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "Worker.jar", "" + processId, "0");
+            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", "" + processId, "0").redirectErrorStream(true);
             try {
                 processList.set(processId, pb.start());
             } catch (IOException e) {

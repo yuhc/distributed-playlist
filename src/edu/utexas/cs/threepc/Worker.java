@@ -1,14 +1,8 @@
 package edu.utexas.cs.threepc;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.PrintWriter;
+import java.io.*;
 import java.util.HashMap;
 import java.util.Map;
-
-/**
- * Created by zhitingz on 10/2/15.
- */
 
 /**
  * Note: maybe use sock.connect to set a timeout.
