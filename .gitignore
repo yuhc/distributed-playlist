@@ -1,6 +1,8 @@
 *.xml
 .idea/*
 materials/NetFramework
+materials/src
+materials/*.jar
 3pc.iml
 ._src
 out
