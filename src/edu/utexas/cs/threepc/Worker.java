@@ -15,10 +15,11 @@ public class Worker {
 
     private int  processId;
     private int  totalProcess;
+    private int  leader;
     private int  viewNumber;
     private File DTLog;
     private int  messageCounter;
-    private Map<String, String> map;
+    private Map<String, String> playlist;
     private List<Boolean> processAlive;
 
     private String hostName;
@@ -26,14 +27,15 @@ public class Worker {
     private int    reBuild;
     private NetController netController;
 
-    public Worker(int process_id, int total_process, String host_name, int base_port, int rebuild) {
+    public Worker(int process_id, int total_process, String host_name, int base_port, int ld, int rebuild) {
         processId = process_id;
         totalProcess = total_process;
         hostName = host_name;
         basePort = base_port;
+        leader = ld;
         reBuild = rebuild;
 
-        map = new HashMap<String, String>();
+        playlist = new HashMap<String, String>();
         try {
             DTLog = new File("log_" + process_id + ".txt");
             if (!DTLog.exists()) {
@@ -52,14 +54,87 @@ public class Worker {
         getReceivedMsgs(netController);
     }
 
+    public void processMessage(String message) {
+        String[] splits = message.split(" ");
+
+        int sender_id = Integer.parseInt(splits[0]);
+        switch (splits[1]) {
+            case "vr":
+                break;
+            case "v":
+                break;
+            case "abt":
+                break;
+            case "rc":
+                break;
+            case "ack":
+                break;
+            case "c":
+                break;
+            case "add":
+                vote_add_edit(splits[2]);
+                break;
+            case "rm":
+                vote_rm(splits[2]);
+                break;
+            case "e":
+                vote_add_edit(splits[2]);
+                break;
+            default:
+                System.err.println("Cannot recognize this command: " + splits[0]);
+                break;
+        }
+    }
+
+    /**
+     * Respond to VOTE_REQ
+     * @param songName
+     */
+    public void vote_add_edit(String songName) {
+        if (playlist.containsKey(songName)) {
+            netController.sendMsg(leader, String.format("%d v no", processId));
+        }
+        else {
+            netController.sendMsg(leader, String.format("%d v yes", processId));
+        }
+    }
+
+    /**
+     * Add song to playlist
+     * @param songName
+     * @param URL
+     */
     public void add(String songName, String URL) {
-        map.put(songName, URL);
+        playlist.put(songName, URL);
     }
 
+    /**
+     * Respond to VOTE_REQ
+     * @param songName
+     */
+    public void vote_rm(String songName) {
+        if (playlist.containsKey(songName)) {
+            netController.sendMsg(leader, String.format("%d v yes", processId));
+        }
+        else {
+            netController.sendMsg(leader, String.format("%d v no", processId));
+        }
+    }
+
+    /**
+     * Remove song from playlist
+     * @param songName
+     */
     public void remove(String songName) {
-        map.remove(songName);
+        playlist.remove(songName);
     }
 
+    /**
+     * Edit song in playlist
+     * @param songName
+     * @param newSongName
+     * @param newSongURL
+     */
     public void edit(String songName, String newSongName, String newSongURL) {
         remove(songName);
         add(newSongName, newSongURL);
@@ -73,7 +148,6 @@ public class Worker {
             e.printStackTrace();
         }
         netController = new NetController(config);
-
     }
 
     /**
@@ -86,7 +160,8 @@ public class Worker {
                 while (true) {
                     List<String> receivedMsgs = new ArrayList<String>(netController.getReceivedMsgs());
                     for (int i = 0; i < receivedMsgs.size(); i++) {
-                        System.err.println(String.format("[MASTER] receive %s", receivedMsgs.get(i)));
+                        System.err.println(String.format("[MASTER] receive \"%s\"", receivedMsgs.get(i)));
+                        processMessage(receivedMsgs.get(i));
                     }
                 }
             }
@@ -102,9 +177,10 @@ public class Worker {
         int    totalProcess = Integer.parseInt(args[1]);
         String hostName = args[2];
         int    basePort = Integer.parseInt(args[3]);
-        int    reBuild = Integer.parseInt(args[4]);
+        int    leader   = Integer.parseInt(args[4]);
+        int    reBuild  = Integer.parseInt(args[5]);
 
-        Worker w = new Worker(processId, totalProcess, hostName, basePort, reBuild);
+        Worker w = new Worker(processId, totalProcess, hostName, basePort, leader, reBuild);
         System.err.println("[process "+processId+"] started");
         w.netController.sendMsg(0, "aaa");
 

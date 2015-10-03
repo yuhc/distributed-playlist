@@ -38,8 +38,10 @@ public class Master {
         if (totalProcess > 0) killAll();
         processList.add(0, null);
         totalProcess = n;
+        assignLeader(1);
+
         for (int i = 1; i <= n; i++) {
-            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+i, ""+totalProcess, hostName, ""+basePort, "1").redirectErrorStream(true);
+            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+i, ""+totalProcess, hostName, ""+basePort, ""+leader, "1").redirectErrorStream(true);
             try {
                 p = pb.start();
                 System.err.println("Process " + i + " [" + p + "] started");
@@ -49,7 +51,6 @@ public class Master {
                 e.printStackTrace();
             }
         }
-        assignLeader(1);
         buildSocket();
         getReceivedMsgs(netController);
     }
@@ -153,7 +154,7 @@ public class Master {
             System.err.println("Proces "+processId+" alrealy exists");
         }
         else {
-            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+processId, ""+totalProcess, hostName, ""+basePort, "0").redirectErrorStream(true);
+            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+processId, ""+totalProcess, hostName, ""+basePort, ""+leader, "0").redirectErrorStream(true);
             try {
                 processList.set(processId, pb.start());
             } catch (IOException e) {
