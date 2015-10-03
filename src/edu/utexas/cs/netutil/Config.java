@@ -3,7 +3,7 @@
  * purposes as long as attribution is maintained.
  * 
  * @author: Isaac Levy
- * @modifier: Hangchen Yu
+ * @modified by Hangchen Yu
  */
 
 package edu.utexas.cs.netutil;

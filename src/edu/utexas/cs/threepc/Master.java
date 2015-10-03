@@ -36,6 +36,8 @@ public class Master {
     public void createProcesses(int n) {
         Process p;
         if (totalProcess > 0) killAll();
+        processList.add(0, null);
+        totalProcess = n;
         for (int i = 1; i <= n; i++) {
             ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+i, ""+totalProcess, hostName, ""+basePort, "1").redirectErrorStream(true);
             try {
@@ -47,10 +49,9 @@ public class Master {
                 e.printStackTrace();
             }
         }
-        totalProcess = n;
         assignLeader(1);
         buildSocket();
-        netController.getReceivedMsgs();
+        getReceivedMsgs(netController);
     }
 
     /**
@@ -64,6 +65,23 @@ public class Master {
                 Scanner sc = new Scanner(src);
                 while (sc.hasNextLine()) {
                     dest.println(sc.nextLine());
+                }
+            }
+        }).start();
+    }
+
+    /**
+     * Receive messgaes
+     * @param netController
+     */
+    private static void getReceivedMsgs(final NetController netController) {
+        new Thread(new Runnable() {
+            public void run() {
+                while (true) {
+                    List<String> receivedMsgs = new ArrayList<String>(netController.getReceivedMsgs());
+                    for (int i = 0; i < receivedMsgs.size(); i++) {
+                        System.err.println(String.format("[MASTER] receive %s", receivedMsgs.get(i)));
+                    }
                 }
             }
         }).start();

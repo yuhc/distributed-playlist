@@ -23,7 +23,7 @@ import java.util.logging.Level;
  * Public interface for managing network connections.
  * You should only need to use this and the Config class.
  * @author ilevy
- *
+ * @modified by Hangchcen Yu
  */
 public class NetController {
 	private final Config config;
@@ -35,7 +35,7 @@ public class NetController {
 		this.config = config;
 		inSockets = Collections.synchronizedList(new ArrayList<IncomingSock>());
 		listener = new ListenServer(config, inSockets);
-		outSockets = new OutgoingSock[config.numProcesses];
+		outSockets = new OutgoingSock[config.numProcesses+1];
 		listener.start();
 	}
 	
@@ -45,7 +45,7 @@ public class NetController {
 			throw new IllegalStateException("proc " + proc + " not null");
 		
 		outSockets[proc] = new OutgoingSock(new Socket(config.addresses[proc], config.ports[proc]));
-		config.logger.info(String.format("Server %d: Socket to %d established", 
+		config.logger.info(String.format("Server %d: Socket to %d established",
 				config.procNo, proc));
 	}
 	
@@ -68,7 +68,7 @@ public class NetController {
 				outSockets[process] = null;
 				try{
 					initOutgoingConn(process);
-                        		outSockets[process].sendMsg(msg);	
+					outSockets[process].sendMsg(msg);
 				} catch(IOException e1){
 					if (outSockets[process] != null) {
 						outSockets[process].cleanShutdown();

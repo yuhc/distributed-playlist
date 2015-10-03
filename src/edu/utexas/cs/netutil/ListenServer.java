@@ -49,8 +49,7 @@ public class ListenServer extends Thread {
 				incomingSock.start();
 				conf.logger.fine(String.format(
 						"Server %d: New incoming connection accepted from %s",
-						procNum, incomingSock.sock.getInetAddress()
-								.getHostName()));
+						procNum, incomingSock.sock.getInetAddress().getHostName()));
 			} catch (IOException e) {
 				if (!killSig) {
 					conf.logger.log(Level.INFO, String.format(

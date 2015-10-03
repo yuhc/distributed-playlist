@@ -49,7 +49,7 @@ public class Worker {
         }
 
         buildSocket();
-        netController.getReceivedMsgs();
+        getReceivedMsgs(netController);
     }
 
     public void add(String songName, String URL) {
@@ -68,12 +68,29 @@ public class Worker {
     public void buildSocket() {
         Config config = null;
         try {
-            config = new Config(0, totalProcess, hostName, basePort);
+            config = new Config(processId, totalProcess, hostName, basePort);
         } catch (IOException e) {
             e.printStackTrace();
         }
         netController = new NetController(config);
 
+    }
+
+    /**
+     * Receive messages
+     * @param netController
+     */
+    private static void getReceivedMsgs(final NetController netController) {
+        new Thread(new Runnable() {
+            public void run() {
+                while (true) {
+                    List<String> receivedMsgs = new ArrayList<String>(netController.getReceivedMsgs());
+                    for (int i = 0; i < receivedMsgs.size(); i++) {
+                        System.err.println(String.format("[MASTER] receive %s", receivedMsgs.get(i)));
+                    }
+                }
+            }
+        }).start();
     }
 
     public static void main(String args[]) {
