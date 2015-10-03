@@ -1,8 +1,8 @@
 package edu.utexas.cs.threepc;
 
+import edu.utexas.cs.netutil.*;
+
 import java.io.*;
-import java.lang.reflect.Array;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.lang.Process;
@@ -11,10 +11,15 @@ import java.util.Scanner;
 public class Master {
 
     private List<Process> processList;
-    private int totalProcess;
-    private int leader;
-    private int lastKilled;
-    private int delayTime;
+    private int   totalProcess;
+    private int   leader;
+    private int   lastKilled;
+    private int   delayTime;
+
+    final String  hostName = "127.0.0.1";
+    final int     basePort = 9000;
+
+    private NetController netController;
 
     public Master() {
         processList = new ArrayList<Process>();
@@ -30,9 +35,9 @@ public class Master {
      */
     public void createProcesses(int n) {
         Process p;
-        killAll();
+        if (totalProcess > 0) killAll();
         for (int i = 1; i <= n; i++) {
-            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+i, "1").redirectErrorStream(true);
+            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+i, ""+totalProcess, hostName, ""+basePort, "1").redirectErrorStream(true);
             try {
                 p = pb.start();
                 System.err.println("Process " + i + " [" + p + "] started");
@@ -44,6 +49,8 @@ public class Master {
         }
         totalProcess = n;
         assignLeader(1);
+        buildSocket();
+        netController.getReceivedMsgs();
     }
 
     /**
@@ -100,6 +107,9 @@ public class Master {
         for (int i = 1; i <= totalProcess; i++) {
             kill(i);
         }
+        processList.clear();
+        totalProcess = leader = 0;
+        netController.shutdown();
     }
 
     /**
@@ -125,7 +135,7 @@ public class Master {
             System.err.println("Proces "+processId+" alrealy exists");
         }
         else {
-            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", "" + processId, "0").redirectErrorStream(true);
+            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+processId, ""+totalProcess, hostName, ""+basePort, "0").redirectErrorStream(true);
             try {
                 processList.set(processId, pb.start());
             } catch (IOException e) {
@@ -186,7 +196,19 @@ public class Master {
         }
         else {
             leader = processId;
+            System.err.println("Proces "+processId+" becomes coordinator");
         }
+    }
+
+    public void buildSocket() {
+        Config config = null;
+        try {
+            config = new Config(0, totalProcess, hostName, basePort);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        netController = new NetController(config);
+
     }
 
     public static void handleRequest(Master m, String req) {
@@ -194,8 +216,13 @@ public class Master {
 
         switch (splits[0]) {
             case "cp":
-                int numProcess = Integer.parseInt(splits[1]);
-                m.createProcesses(numProcess);
+                try {
+                    int numProcess = Integer.parseInt(splits[1]);
+                    m.createProcesses(numProcess);
+                }
+                catch (ArrayIndexOutOfBoundsException e) {
+                    System.err.println("Wrong paramter");
+                }
                 break;
             case "k":
                 int killProcessId = Integer.parseInt(splits[1]);
@@ -249,9 +276,11 @@ public class Master {
             case "pp":
                 m.printParameters();
                 break;
+            case "q":
+                m.killAll();
+                System.exit(0);
             default:
                 System.err.println("Cannot recognize this command: " + splits[0]);
-                //System.exit(-1);
                 break;
         }
     }
@@ -266,8 +295,6 @@ public class Master {
                 while ((line = br.readLine()) != null) {
                     handleRequest(m, line);
                 }
-            } catch (FileNotFoundException e) {
-                e.printStackTrace();
             } catch (IOException e) {
                 e.printStackTrace();
             }

@@ -28,13 +28,13 @@ public class Config {
 	 * @throws IOException
 	 */
 	public Config(int no, int nProc, String host, int basePort) throws FileNotFoundException, IOException {
-		procNum = no;
-		logger = Logger.getLogger("data/process"+procNum+".log");
+		procNo = no;
+		logger = Logger.getLogger("data/process"+procNo+".log");
 
 		numProcesses = nProc;
-		addresses = new InetAddress[numProcesses];
-		ports = new int[numProcesses];
-		for (int i=0; i < numProcesses; i++) {
+		addresses = new InetAddress[numProcesses+1];
+		ports = new int[numProcesses+1];
+		for (int i = 0; i <= numProcesses; i++) {
 			ports[i] = basePort + i;
 			addresses[i] = InetAddress.getByName(host);
 		}
@@ -59,7 +59,7 @@ public class Config {
 	/**
 	 * This hosts number (should correspond to array above).  Each host should have a different number.
 	 */
-	public int procNum;
+	public int procNo;
 	
 	/**
 	 * Logger.  Mainly used for console printing, though be diverted to a file.

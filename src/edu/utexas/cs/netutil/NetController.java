@@ -46,7 +46,7 @@ public class NetController {
 		
 		outSockets[proc] = new OutgoingSock(new Socket(config.addresses[proc], config.ports[proc]));
 		config.logger.info(String.format("Server %d: Socket to %d established", 
-				config.procNum, proc));
+				config.procNo, proc));
 	}
 	
 	/**
@@ -75,17 +75,17 @@ public class NetController {
 	                	outSockets[process] = null;
 					}
 					config.logger.info(String.format("Server %d: Msg to %d failed.",
-                        config.procNum, process));
+                        config.procNo, process));
         		    config.logger.log(Level.FINE, String.format("Server %d: Socket to %d error",
-                        config.procNum, process), e);
+                        config.procNo, process), e);
                     return false;
 				}
 				return true;
 			}
 			config.logger.info(String.format("Server %d: Msg to %d failed.", 
-				config.procNum, process));
+				config.procNo, process));
 			config.logger.log(Level.FINE, String.format("Server %d: Socket to %d error", 
-				config.procNum, process), e);
+				config.procNo, process), e);
 			return false;
 		}
 		return true;
@@ -105,7 +105,7 @@ public class NetController {
 					objs.addAll(curSock.getMsgs());
 				} catch (Exception e) {
 					config.logger.log(Level.INFO, 
-							"Server " + config.procNum + " received bad data on a socket", e);
+							"Server " + config.procNo + " received bad data on a socket", e);
 					curSock.cleanShutdown();
 					iter.remove();
 				}
