@@ -1,3 +1,10 @@
+# whitelist
+!.gitignore
+!build.xml
+
+# blacklist
+*.xml
+build/*
 .idea/*
 materials/NetFramework
 materials/src
