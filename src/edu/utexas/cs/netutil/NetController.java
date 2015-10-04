@@ -45,8 +45,8 @@ public class NetController {
 			throw new IllegalStateException("proc " + proc + " not null");
 		
 		outSockets[proc] = new OutgoingSock(new Socket(config.addresses[proc], config.ports[proc]));
-		config.logger.info(String.format("Server %d: Socket to %d established",
-				config.procNo, proc));
+		//config.logger.info(String.format("Server %d: Socket to %d established",
+		//		config.procNo, proc));
 	}
 	
 	/**

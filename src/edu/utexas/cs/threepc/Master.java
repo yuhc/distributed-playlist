@@ -3,10 +3,8 @@ package edu.utexas.cs.threepc;
 import edu.utexas.cs.netutil.*;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 import java.lang.Process;
-import java.util.Scanner;
 
 public class Master {
 
@@ -34,14 +32,18 @@ public class Master {
      * @param n number of processes
      */
     public void createProcesses(int n) {
+        if (n <= 0) {
+            System.err.println("Wrong parameter");
+            return;
+        }
+
         Process p;
         if (totalProcess > 0) killAll();
         processList.add(0, null);
         totalProcess = n;
-        assignLeader(1);
 
         for (int i = 1; i <= n; i++) {
-            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+i, ""+totalProcess, hostName, ""+basePort, ""+leader, "1").redirectErrorStream(true);
+            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+i, ""+totalProcess, hostName, ""+basePort, "1", "1").redirectErrorStream(true);
             try {
                 p = pb.start();
                 System.err.println("Process " + i + " [" + p + "] started");
@@ -51,6 +53,8 @@ public class Master {
                 e.printStackTrace();
             }
         }
+        assignLeader(1);
+
         buildSocket();
         getReceivedMsgs(netController);
     }
@@ -92,7 +96,7 @@ public class Master {
      * Used for debugging
      */
     public void printParameters() {
-        System.err.print("process_num=" + totalProcess + ", leader_no=" + leader + ", last_killed_no=" + lastKilled + ", existed_process=[");
+        System.err.print("process_num=" + totalProcess + ", leader_no=" + leader + ", last_killed_no=" + lastKilled + ", existed_process=[ ");
         boolean existed = false;
         for (int i = 1; i <= totalProcess; i++) {
             if (processList.get(i) != null) System.err.print(i + " ");
@@ -205,6 +209,18 @@ public class Master {
 
     }
 
+    public void add(String songName, String URL) {
+        netController.sendMsg(leader, "0 add "+songName+" "+URL);
+    }
+
+    public void remove(String songName) {
+        netController.sendMsg(leader, "0 rm "+songName);
+    }
+
+    public void edit(String songName, String URL, String newURL) {
+        netController.sendMsg(leader, "0 e "+songName+" "+URL+" "+newURL);
+    }
+
     /**
      * Assign coordinator
      * @param processId
@@ -292,6 +308,22 @@ public class Master {
                 int killSelfProcessId = Integer.parseInt(splits[2]);
                 m.deathAfter(numReceiveMessages, killSelfProcessId);
                 break;
+            case "add":
+            case "a":
+                try {
+                    m.add(splits[1], splits[2]);
+                }
+                catch (ArrayIndexOutOfBoundsException e) {
+                    System.err.println("Wrong paramter");
+                }
+                break;
+            case "remove":
+            case "rmv":
+                m.remove(splits[1]);
+                break;
+            case "edit":
+            case "e":
+                m.edit(splits[1], splits[2], splits[3]);
             case "pp":
                 m.printParameters();
                 break;

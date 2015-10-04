@@ -3,10 +3,7 @@ package edu.utexas.cs.threepc;
 import edu.utexas.cs.netutil.*;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Note: maybe use sock.connect to set a timeout.
@@ -20,7 +17,11 @@ public class Worker {
     private File DTLog;
     private int  messageCounter;
     private Map<String, String> playlist;
-    private List<Boolean> processAlive;
+
+    private Boolean[] voteStats;
+    private int voteAgreeNum;
+    private Boolean[] processAlive;
+    private int aliveProcessNum;
 
     private String hostName;
     private int    basePort;
@@ -34,6 +35,9 @@ public class Worker {
         basePort = base_port;
         leader = ld;
         reBuild = rebuild;
+        voteStats = new Boolean[totalProcess+1];
+        Arrays.fill(voteStats, false);
+        voteAgreeNum = 0;
 
         playlist = new HashMap<String, String>();
         try {
@@ -45,10 +49,9 @@ public class Worker {
             e.printStackTrace();
         }
 
-        processAlive = new ArrayList<Boolean>();
-        for (int i = 0; i <= totalProcess; i++) {
-            processAlive.add(i, true);
-        }
+        processAlive = new Boolean[totalProcess+1];
+        Arrays.fill(processAlive, true);
+        aliveProcessNum = totalProcess;
 
         buildSocket();
         getReceivedMsgs(netController);
@@ -60,8 +63,17 @@ public class Worker {
         int sender_id = Integer.parseInt(splits[0]);
         switch (splits[1]) {
             case "vr":
+                switch (splits[2]) {
+                    case "add":
+                    case "e":
+                        voteAddEdit(sender_id, splits[3]);
+                        break;
+                    default:
+                        System.err.println(String.format("[PARTICIPANT#%d] receives wrong command", processId));
+                }
                 break;
             case "v":
+                countVote(sender_id, splits[2]);
                 break;
             case "abt":
                 break;
@@ -72,17 +84,30 @@ public class Worker {
             case "c":
                 break;
             case "add":
-                voteAddEdit(splits[2]);
+            case "e":
+                voteAddEdit(sender_id, splits[2]);
                 break;
             case "rm":
                 voteRm(splits[2]);
                 break;
-            case "e":
-                voteAddEdit(splits[2]);
-                break;
             default:
-                System.err.println("Cannot recognize this command: " + splits[0]);
+                System.err.println("[PROCESS#"+processId+"] cannot recognize this command: " + splits[0]);
                 break;
+        }
+    }
+
+    public void countVote(int sender_id, String vote) {
+        if (vote == "no") {
+            Arrays.fill(voteStats, false);
+            broadcastMsgs("abt");
+        }
+        else {
+            if (!voteStats[sender_id]) {
+                voteAgreeNum++;
+                if (voteAgreeNum == aliveProcessNum-1) {
+                    broadcastMsgs("rc");
+                }
+            }
         }
     }
 
@@ -90,12 +115,20 @@ public class Worker {
      * Respond to VOTE_REQ
      * @param songName
      */
-    public void voteAddEdit(String songName) {
-        if (playlist.containsKey(songName)) {
-            netController.sendMsg(leader, String.format("%d v no", processId));
+    public void voteAddEdit(int sender_id, String songName) {
+        if (sender_id > 0) {
+            if (playlist.containsKey(songName)) {
+                netController.sendMsg(leader, String.format("%d v no", processId));
+            } else {
+                netController.sendMsg(leader, String.format("%d v yes", processId));
+            }
         }
         else {
-            netController.sendMsg(leader, String.format("%d v yes", processId));
+            if (playlist.containsKey(songName)) {
+                netController.sendMsg(0, "Request refused");
+            } else {
+                broadcastMsgs("vr add "+songName);
+            }
         }
     }
 
@@ -150,6 +183,15 @@ public class Worker {
         netController = new NetController(config);
     }
 
+
+    private void broadcastMsgs(String instruction) {
+        for (int i = 1; i <= totalProcess; i++)
+            if (i != processId && processAlive[i]) {
+                netController.sendMsg(i, processId+" "+instruction);
+                System.out.println(String.format("[COORDINATOR#%d] asks #%d to reply \"%s\"", processId, i, instruction));
+            }
+    }
+
     /**
      * Receive messages
      * @param netController
@@ -160,7 +202,7 @@ public class Worker {
                 while (true) {
                     List<String> receivedMsgs = new ArrayList<String>(netController.getReceivedMsgs());
                     for (int i = 0; i < receivedMsgs.size(); i++) {
-                        System.err.println(String.format("[MASTER] receive \"%s\"", receivedMsgs.get(i)));
+                        System.err.println(String.format("[PROCESS#%d] receive \"%s\"", processId, receivedMsgs.get(i)));
                         processMessage(receivedMsgs.get(i));
                     }
                 }
@@ -182,8 +224,6 @@ public class Worker {
 
         Worker w = new Worker(processId, totalProcess, hostName, basePort, leader, reBuild);
         System.out.println("[process "+processId+"] started");
-        w.netController.sendMsg(0, "aaa");
-
     }
 
 
