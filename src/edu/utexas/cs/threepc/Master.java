@@ -324,6 +324,7 @@ public class Master {
             case "edit":
             case "e":
                 m.edit(splits[1], splits[2], splits[3]);
+                break;
             case "pp":
                 m.printParameters();
                 break;

@@ -18,8 +18,12 @@ public class Worker {
     private int  messageCounter;
     private Map<String, String> playlist;
 
+    private String currentCommand;
+
     private Boolean[] voteStats;
     private int voteAgreeNum;
+    private Boolean[] ackStats;
+    private int ackNum;
     private Boolean[] processAlive;
     private int aliveProcessNum;
 
@@ -35,9 +39,15 @@ public class Worker {
         basePort = base_port;
         leader = ld;
         reBuild = rebuild;
+
+        currentCommand = "";
+
         voteStats = new Boolean[totalProcess+1];
         Arrays.fill(voteStats, false);
         voteAgreeNum = 0;
+        ackStats = new Boolean[totalProcess+1];
+        Arrays.fill(ackStats, false);
+        ackNum = 0;
 
         playlist = new HashMap<String, String>();
         try {
@@ -63,11 +73,14 @@ public class Worker {
         int sender_id = Integer.parseInt(splits[0]);
         switch (splits[1]) {
             case "vr":
+                currentCommand = message;
                 switch (splits[2]) {
                     case "add":
                     case "e":
-                        voteAddEdit(sender_id, splits[3]);
+                        voteAddEdit(sender_id, splits[3], message);
                         break;
+                    case "rm":
+                        voteRm(sender_id, splits[3]);
                     default:
                         System.err.println(String.format("[PARTICIPANT#%d] receives wrong command", processId));
                 }
@@ -78,24 +91,34 @@ public class Worker {
             case "abt":
                 break;
             case "rc":
+                sendAcknowledge();
                 break;
             case "ack":
+                countAck(sender_id);
                 break;
             case "c":
+                performCommit();
                 break;
             case "add":
             case "e":
-                voteAddEdit(sender_id, splits[2]);
+                currentCommand = message;
+                voteAddEdit(sender_id, splits[2], message);
                 break;
             case "rm":
-                voteRm(splits[2]);
+                currentCommand = message;
+                voteRm(sender_id, splits[2]);
                 break;
             default:
-                System.err.println("[PROCESS#"+processId+"] cannot recognize this command: " + splits[0]);
+                terminalLog("cannot recognize this command: " + splits[0]);
                 break;
         }
     }
 
+    /**
+     * Count the number of received VOTE
+     * @param sender_id
+     * @param vote
+     */
     public void countVote(int sender_id, String vote) {
         if (vote == "no") {
             Arrays.fill(voteStats, false);
@@ -112,10 +135,46 @@ public class Worker {
     }
 
     /**
+     * Count the number of received ACK
+     * @param sender_id
+     */
+    public void countAck(int sender_id) {
+        if (!ackStats[sender_id]) {
+            ackNum++;
+            if (ackNum == aliveProcessNum-1) {
+                broadcastMsgs("c");
+                currentCommand = "# " + currentCommand; // format the command
+                performCommit();
+            }
+        }
+    }
+
+    public void performCommit() {
+        if (currentCommand == "") return;
+        String[] splits = currentCommand.split(" ");
+
+        switch (splits[2]) {
+            case "add":
+                add(splits[3], splits[4]);
+                break;
+            case "e":
+                edit(splits[3], splits[4], splits[5]);
+                break;
+            case "rm":
+                remove(splits[3]);
+                break;
+            default:
+                break;
+        }
+
+        currentCommand = "";
+    }
+
+    /**
      * Respond to VOTE_REQ
      * @param songName
      */
-    public void voteAddEdit(int sender_id, String songName) {
+    public void voteAddEdit(int sender_id, String songName, String message) {
         if (sender_id > 0) {
             if (playlist.containsKey(songName)) {
                 netController.sendMsg(leader, String.format("%d v no", processId));
@@ -127,7 +186,11 @@ public class Worker {
             if (playlist.containsKey(songName)) {
                 netController.sendMsg(0, "Request refused");
             } else {
-                broadcastMsgs("vr add "+songName);
+                String newCommand = "vr";
+                String[] splits = message.split(" ");
+                for (int i = 1; i < splits.length; i++)
+                    newCommand += " "+splits[i];
+                broadcastMsgs(newCommand);
             }
         }
     }
@@ -139,18 +202,27 @@ public class Worker {
      */
     public void add(String songName, String URL) {
         playlist.put(songName, URL);
+        terminalLog("add <"+songName+","+URL+">");
     }
 
     /**
      * Respond to VOTE_REQ
      * @param songName
      */
-    public void voteRm(String songName) {
-        if (playlist.containsKey(songName)) {
-            netController.sendMsg(leader, String.format("%d v yes", processId));
+    public void voteRm(int sender_id, String songName) {
+        if (sender_id > 0) {
+            if (playlist.containsKey(songName)) {
+                netController.sendMsg(leader, String.format("%d v yes", processId));
+            } else {
+                netController.sendMsg(leader, String.format("%d v no", processId));
+            }
         }
         else {
-            netController.sendMsg(leader, String.format("%d v no", processId));
+            if (playlist.containsKey(songName)) {
+                broadcastMsgs("vr add "+songName);
+            } else {
+                netController.sendMsg(0, "Request refused");
+            }
         }
     }
 
@@ -160,6 +232,7 @@ public class Worker {
      */
     public void remove(String songName) {
         playlist.remove(songName);
+        terminalLog("remove <"+songName+">");
     }
 
     /**
@@ -171,6 +244,11 @@ public class Worker {
     public void edit(String songName, String newSongName, String newSongURL) {
         remove(songName);
         add(newSongName, newSongURL);
+        terminalLog("update <"+songName+"> to <"+newSongName+","+newSongURL+">");
+    }
+
+    public void sendAcknowledge() {
+        unicastMsgs(leader, "ack");
     }
 
     public void buildSocket() {
@@ -184,11 +262,24 @@ public class Worker {
     }
 
 
+    /**
+     * Unicast to a partner
+     * @param dest_id
+     * @param instruction
+     */
+    private void unicastMsgs(int dest_id, String instruction) {
+        netController.sendMsg(dest_id, String.format("%d %s", processId, instruction));
+    }
+
+    /**
+     * Broadcast to available partners
+     * @param instruction
+     */
     private void broadcastMsgs(String instruction) {
         for (int i = 1; i <= totalProcess; i++)
             if (i != processId && processAlive[i]) {
-                netController.sendMsg(i, processId+" "+instruction);
-                System.out.println(String.format("[COORDINATOR#%d] asks #%d to reply \"%s\"", processId, i, instruction));
+                unicastMsgs(i, instruction);
+                System.out.println(String.format("[%s#%d] asks #%d to respond to \"%s\"", processId==leader?"COORDINATOR":"PARTICIPANT", processId, i, instruction));
             }
     }
 
@@ -208,6 +299,10 @@ public class Worker {
                 }
             }
         }).start();
+    }
+
+    private void terminalLog(String message) {
+        System.err.println(String.format("[%s#%d] %s", processId==leader?"COORDINATOR":"PARTICIPANT", processId, message));
     }
 
     public static void main(String args[]) {
