@@ -1,11 +1,16 @@
 <?xml version="1.0"?>
 <project name="three phase commit" default="make-jars">
   <property name="src_dir" value="src/edu/utexas/cs/"/>
-  <property name="build_dir" value="build/edu/utexas/cs/"/>
+  <property name="build_dir" value="build/"/>
+  <property name="build_class_dir" value="${build_dir}/edu/utexas/cs/"/>
   <property name="out_dir" value="out/"/>
-  <property name="netutil_build_dir" value="${build_dir}/netutil"/>
-  <property name="threepc_build_dir" value="${build_dir}/threepc"/>
+  <property name="netutil_build_dir" value="${build_class_dir}/netutil"/>
+  <property name="threepc_build_dir" value="${build_class_dir}/threepc"/>
   <property name="jar_dir" value="obj"/>
+
+  <presetdef name="javac">
+    <javac includeantruntime="false" />
+  </presetdef>
 
   <target name="setup">
     <mkdir dir="${build_dir}"/>
@@ -15,26 +20,37 @@
   </target>
   
   <target name="compile-netutil" depends="setup">
-    <javac destdir="${netutil_build_dir}" source="1.7" target="1.7">
+    <javac destdir="${build_dir}" source="1.7" target="1.7">
       <src path="${src_dir}/netutil"/>
     </javac>
   </target>
 
   <target name="compile-threepc" depends="compile-netutil">
-    <javac destdir="${threepc_build_dir}" source="1.7" target="1.7">
+    <javac destdir="${build_dir}" source="1.7" target="1.7">
       <src path="${src_dir}/threepc"/>
-      <include name="${netutil_build_dir}/*.class"/>
     </javac>
   </target>
 
 
   <target name="make-jars" depends="compile-threepc">
-    <jar destfile="${out_dir}master.jar"
-         includes="${netutil_build_dir}/*, ${threepc_build_dir}/Master.class"/>
+    <jar destfile="${out_dir}/master.jar">
+      <fileset dir="${build_dir}" />
+      <manifest>
+         <attribute name="Main-Class" value="edu.utexas.cs.threepc.Master" />
+      </manifest>
+    </jar>
 
-    <jar destfile="${out_dir}worker.jar"
-         includes="${netutil_build_dir}/*, ${threepc_build_dir}/Worker.class"/>
+    <jar destfile="${out_dir}/worker.jar">
+      <fileset dir="${build_dir}" />
+       <manifest>
+         <attribute name="Main-Class" value="edu.utexas.cs.threepc.Worker" />
+      </manifest>
+    </jar>
     
+  </target>
+
+  <target name="clean">
+     <delete dir="${build_dir}" />
   </target>
 
 </project>  
