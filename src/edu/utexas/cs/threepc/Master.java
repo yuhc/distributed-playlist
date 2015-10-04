@@ -309,7 +309,11 @@ public class Master {
         Master m = new Master();
         if (args.length != 0) {
             File f = new File("data/"+args[0]);
-            try (BufferedReader br = new BufferedReader(new FileReader("data/command"))) {
+            if (!f.exists()) {
+                System.err.println("Cannot find command file " + args[0]);
+                System.exit(-1);
+            }
+            try (BufferedReader br = new BufferedReader(new FileReader(f))) {
                 String line = null;
                 while ((line = br.readLine()) != null) {
                     handleRequest(m, line);

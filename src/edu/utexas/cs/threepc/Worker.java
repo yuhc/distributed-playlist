@@ -72,13 +72,13 @@ public class Worker {
             case "c":
                 break;
             case "add":
-                vote_add_edit(splits[2]);
+                voteAddEdit(splits[2]);
                 break;
             case "rm":
-                vote_rm(splits[2]);
+                voteRm(splits[2]);
                 break;
             case "e":
-                vote_add_edit(splits[2]);
+                voteAddEdit(splits[2]);
                 break;
             default:
                 System.err.println("Cannot recognize this command: " + splits[0]);
@@ -90,7 +90,7 @@ public class Worker {
      * Respond to VOTE_REQ
      * @param songName
      */
-    public void vote_add_edit(String songName) {
+    public void voteAddEdit(String songName) {
         if (playlist.containsKey(songName)) {
             netController.sendMsg(leader, String.format("%d v no", processId));
         }
@@ -112,7 +112,7 @@ public class Worker {
      * Respond to VOTE_REQ
      * @param songName
      */
-    public void vote_rm(String songName) {
+    public void voteRm(String songName) {
         if (playlist.containsKey(songName)) {
             netController.sendMsg(leader, String.format("%d v yes", processId));
         }
@@ -154,7 +154,7 @@ public class Worker {
      * Receive messages
      * @param netController
      */
-    private static void getReceivedMsgs(final NetController netController) {
+    private void getReceivedMsgs(final NetController netController) {
         new Thread(new Runnable() {
             public void run() {
                 while (true) {
@@ -181,7 +181,7 @@ public class Worker {
         int    reBuild  = Integer.parseInt(args[5]);
 
         Worker w = new Worker(processId, totalProcess, hostName, basePort, leader, reBuild);
-        System.err.println("[process "+processId+"] started");
+        System.out.println("[process "+processId+"] started");
         w.netController.sendMsg(0, "aaa");
 
     }

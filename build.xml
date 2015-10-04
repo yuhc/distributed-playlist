@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<project name="three phase commit" default="make-jars">
+  <property name="src_dir" value="src/edu/utexas/cs/"/>
+  <property name="build_dir" value="build/edu/utexas/cs/"/>
+  <property name="netutil_build_dir" value="${build_dir}/netutil"/>
+  <property name="threepc_build_dir" value="${build_dir}/threepc"/>
+  <property name="jar_dir" value="obj"/>
+
+  <target name="setup">
+    <mkdir dir="${build_dir}"/>
+    <mkdir dir="${netutil_build_dir}"/>
+    <mkdir dir="${threepc_build_dir}"/>
+  </target>
+  
+  <target name="compile-netutil" depends="setup">
+    <javac destdir="${netutil_build_dir}" source="1.8" target="1.8">
+      <src path="${src_dir}/netutil"/>
+    </javac>
+  </target>
+
+  <target name="compile-threepc" depends="compile-netutil">
+    <javac destdir="${threepc_build_dir}" source="1.8" target="1.8">
+      <src path="${src_dir}/threepc"/>
+      <include name="${netutil_build_dir}/*.class"/>
+    </javac>
+  </target>
+
+
+  <target name="make-jars" depends="compile-threepc">
+    <jar destfile="master.jar"
+         includes="${netutil_build_dir}/*, ${threepc_build_dir}/Master.class"/>
+
+    <jar destfile="worker.jar"
+         includes="${netutil_build_dir}/*, ${threepc_build_dir}/Worker.class"/>
+    
+  </target>
+
+</project>  
