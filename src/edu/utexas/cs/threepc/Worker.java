@@ -28,6 +28,7 @@ public class Worker {
     private int aliveProcessNum;
 
     private String hostName;
+    private String lastCommandInLog;
     private int    basePort;
     private int    reBuild;
     private NetController netController;
@@ -51,10 +52,6 @@ public class Worker {
 
         playlist = new HashMap<String, String>();
         try {
-            DTLog = new File("log_" + processId + ".txt");
-            if (!DTLog.exists()) {
-                DTLog.createNewFile();
-            }
             File playlistInit = new File("data/playlist_init_"+processId+".txt");
             if (playlistInit.exists()) {
                 BufferedReader br = new BufferedReader(new FileReader(playlistInit));
@@ -63,6 +60,20 @@ public class Worker {
                     String[] splits = line.split(",");
                     playlist.put(splits[0], splits[1]);
                 }
+                br.close();
+            }
+            DTLog = new File("log_" + processId + ".txt");
+            if (!DTLog.exists()) {
+                DTLog.createNewFile();
+            } else {
+                // Read recovery log and try to reconstruct the state
+                BufferedReader br = new BufferedReader(new FileReader(DTLog));
+                String line = null;
+                while ((line = br.readLine()) != null) {
+                    processRecovery(line);
+                }
+                // TODO: not finished for recovery
+                // Need to get some indication of timeout
                 br.close();
             }
         } catch (IOException e) {
@@ -74,6 +85,27 @@ public class Worker {
 
         buildSocket();
         getReceivedMsgs(netController);
+    }
+
+    public void processRecovery(String message) {
+        if (message.startsWith("start_3pc")) {
+            String[] splits = message.split(":");
+            currentCommand = splits[1];
+            lastCommandInLog = "start_3pc";
+        } else {
+            if (message.equals("abt")) {
+                return;
+            } else if (message.equals("c")) {
+                performCommit();
+            } else if (message.equals("yes")) {
+                return;
+            } else if (message.equals("rc")) {
+                return;
+            } else {
+                System.err.println("Unrecognized command in recovery log: " + message);
+            }
+            lastCommandInLog = message;
+        }
     }
 
     public void processMessage(String message) {
