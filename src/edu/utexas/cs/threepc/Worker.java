@@ -55,10 +55,19 @@ public class Worker {
             if (!DTLog.exists()) {
                 DTLog.createNewFile();
             }
+            File playlistInit = new File("data/playlist_init_"+processId+".txt");
+            if (playlistInit.exists()) {
+                BufferedReader br = new BufferedReader(new FileReader(playlistInit));
+                String line = null;
+                while((line = br.readLine()) != null) {
+                    String[] splits = line.split(",");
+                    playlist.put(splits[0], splits[1]);
+                }
+                br.close();
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
-
         processAlive = new Boolean[this.totalProcess +1];
         Arrays.fill(processAlive, true);
         aliveProcessNum = this.totalProcess;
