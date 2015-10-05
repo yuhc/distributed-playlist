@@ -3,6 +3,7 @@
 !build.xml
 
 # blacklist
+log/*
 .project
 *.xml
 build/*

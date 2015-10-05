@@ -2,6 +2,9 @@ package edu.utexas.cs.threepc;
 
 import edu.utexas.cs.netutil.*;
 
+import javax.swing.Timer;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.io.*;
 import java.util.*;
 
@@ -22,11 +25,12 @@ public class Worker {
     private String currentState;
 
     private Boolean[] voteStats;
-    private int voteAgreeNum;
+    private int voteNum;
     private Boolean[] ackStats;
     private int ackNum;
     private Boolean[] processAlive;
     private int aliveProcessNum;
+    private Boolean[] hasRespond;
 
     private String hostName;
     private String lastCommandInLog;
@@ -34,13 +38,23 @@ public class Worker {
     private int    reBuild;
     private NetController netController;
 
-    public static final String STATE_WAIT      = "WAIT";
-    public static final String STATE_VOTE      = "VOTE";
-    public static final String STATE_PRECOMMIT = "PRECOMMIT";
-    public static final String STATE_COMMIT    = "COMMIT";
-    public static final String STATE_ABORT     = "ABORT";
+    public static final String PREFIX_COMMAND    = "COMMAND";
 
-    public Worker(int processId, int totalProcess, String hostName, int basePort, int ld, int rebuild) {
+    public static final String STATE_RECOVER     = "RECOVER";
+    public static final String STATE_WAIT        = "WAIT";
+    public static final String STATE_WAITVOTE    = "WAITVOTE";
+    public static final String STATE_VOTED       = "VOTE";
+    public static final String STATE_PRECOMMIT   = "PRECOMMIT";
+    public static final String STATE_PRECOMMITED = "PRECOMMITED";
+    public static final String STATE_ACKED       = "ACKED";
+    public static final String STATE_COMMIT      = "COMMIT";
+    public static final String STATE_ABORT       = "ABORT";
+
+    Timer timer;
+    public static final int    TIME_OUT        = 3000;
+    int   decision;
+
+    public Worker(final int processId, final int totalProcess, String hostName, int basePort, int ld, int rebuild) {
         this.processId = processId;
         this.totalProcess = totalProcess;
         this.hostName = hostName;
@@ -50,12 +64,13 @@ public class Worker {
 
         currentCommand = "";
 
-        voteStats = new Boolean[this.totalProcess +1];
+        voteStats = new Boolean[this.totalProcess+1];
         Arrays.fill(voteStats, false);
-        voteAgreeNum = 0;
-        ackStats = new Boolean[this.totalProcess +1];
+        voteNum = 0;
+        ackStats = new Boolean[this.totalProcess+1];
         Arrays.fill(ackStats, false);
         ackNum = 0;
+        hasRespond = new Boolean[this.totalProcess+1];
 
         playlist = new HashMap<String, String>();
         try {
@@ -79,6 +94,7 @@ public class Worker {
                 DTLog.createNewFile();
             } else {
                 // Read recovery log and try to reconstruct the state
+                currentState = STATE_RECOVER;
                 BufferedReader br = new BufferedReader(new FileReader(DTLog));
                 String line;
                 while ((line = br.readLine()) != null) {
@@ -99,24 +115,42 @@ public class Worker {
         buildSocket();
         getReceivedMsgs(netController);
         currentState = STATE_WAIT;
+
+        timer = new Timer(TIME_OUT, new ActionListener() {
+            public void actionPerformed(ActionEvent arg0) {
+                switch (currentState) {
+                    case STATE_WAITVOTE:
+                        for (int i = 1; i <= totalProcess; i++)
+                            if (i != processId && processAlive[i] && !hasRespond[i])
+                                terminalLog(String.format("participant %d times out", i));
+                        performAbort();
+                        break;
+                    default:
+                        break;
+                }
+            }
+        });
+        timer.setRepeats(false);
     }
 
     public void processRecovery(String message) {
-        if (message.startsWith("start_3pc")) {
+        if (message.startsWith(PREFIX_COMMAND)) {
             String[] splits = message.split(":");
             currentCommand = splits[1];
-            lastCommandInLog = "start_3pc";
+            lastCommandInLog = currentCommand;
         } else {
-            if (message.equals(STATE_ABORT)) {
-                return;
-            } else if (message.equals("c")) {
-                performCommit();
-            } else if (message.equals("yes")) {
-                return;
-            } else if (message.equals("rc")) {
-                return;
-            } else {
-                terminalLog("unrecognized command in recovery log: " + message);
+            switch (message) {
+                case STATE_ABORT:
+                    currentCommand = "";
+                    return;
+                case STATE_COMMIT:
+                    performCommit();
+                case "yes":
+                    return;
+                case STATE_PRECOMMIT:
+                    return;
+                default:
+                    terminalLog("unrecognized command in recovery log: " + message);
             }
             lastCommandInLog = message;
         }
@@ -129,6 +163,8 @@ public class Worker {
         switch (splits[1]) {
             case "vr":
                 currentCommand = message;
+                logWrite(PREFIX_COMMAND+":"+message);
+                currentState = STATE_VOTED;
                 switch (splits[2]) {
                     case "add":
                         voteAdd(senderId, splits[3], splits[4]);
@@ -144,13 +180,13 @@ public class Worker {
                 }
                 break;
             case "v":
-                currentState = STATE_VOTE;
                 countVote(senderId, splits[2]);
                 break;
             case "abt":
                 performAbort();
                 break;
-            case "rc":
+            case "rc": // PRECOMMIT
+                logWrite(STATE_PRECOMMIT);
                 sendAcknowledge();
                 break;
             case "ack":
@@ -216,22 +252,36 @@ public class Worker {
         }
     }
 
+    public void waitVote() {
+        logWrite(PREFIX_COMMAND+":# "+currentCommand);
+        timer.start();
+        voteNum = 0;
+        decision = 1;
+        currentState = STATE_WAITVOTE;
+        Arrays.fill(hasRespond, false);
+    }
+
     /**
      * Count the number of received VOTE
      * @param senderId
      * @param vote
      */
     public void countVote(int senderId, String vote) {
+        voteNum++;
+        hasRespond[senderId] = true;
         if (vote.equals("no")) {
-            Arrays.fill(voteStats, false);
-            performAbort();
+            decision = 0;
+            if (voteNum == aliveProcessNum-1 && decision == 0) {
+                timer.stop();
+                performAbort();
+            }
         }
         else {
             if (!voteStats[senderId]) {
-                voteAgreeNum++;
                 voteStats[senderId] = true;
-                if (voteAgreeNum == aliveProcessNum-1) {
-                    logWrite("rc");
+                if (voteNum == aliveProcessNum-1 && decision == 1) {
+                    timer.stop();
+                    logWrite(STATE_PRECOMMITED);
                     broadcastMsgs("rc");
                 }
             }
@@ -246,7 +296,7 @@ public class Worker {
         if (!ackStats[senderId]) {
             ackNum++;
             if (ackNum == aliveProcessNum-1) {
-                logWrite("c");
+                logWrite(STATE_ACKED);
                 broadcastMsgs("c");
                 currentCommand = "# " + currentCommand; // format the command
                 performCommit();
@@ -254,10 +304,17 @@ public class Worker {
         }
     }
 
+    /**
+     * Perform COMMIT operation
+     */
     public void performCommit() {
         if (currentCommand.equals("")) return;
-        String[] splits = currentCommand.split(" ");
+        if (currentState.equals(STATE_RECOVER))
+            logWrite(STATE_RECOVER+":"+currentCommand);
+        else
+            logWrite(STATE_COMMIT);
 
+        String[] splits = currentCommand.split(" ");
         switch (splits[2]) {
             case "add":
                 add(splits[3], splits[4]);
@@ -273,26 +330,42 @@ public class Worker {
         }
 
         currentCommand = "";
-        voteAgreeNum = ackNum = 0;
+        voteNum = ackNum = 0;
         Arrays.fill(voteStats, false);
         Arrays.fill(ackStats, false);
     }
 
+    /**
+     * Perform ABORT operation
+     */
     public void performAbort() {
         if (currentState.equals(STATE_ABORT))
             return;
-        if (currentState.equals(STATE_WAIT) || currentState.equals(STATE_VOTE)) {
+        timer.stop();
+        if (currentState.equals(STATE_WAIT) || currentState.equals(STATE_VOTED)) {
             terminalLog("aborts the request");
         }
         else {
+            if (currentState.equals(STATE_WAITVOTE)) {
+                for (int i = 1; i <= totalProcess; i++)
+                    if (i != processId && processAlive[i] && voteStats[i])
+                        unicastMsgs(i, "abt");
+            }
+            else {
+                broadcastMsgs("abt");
+            }
             terminalLog("aborts the request");
-            broadcastMsgs("abt");
         }
         logWrite(STATE_ABORT);
         if (leader == processId)
             currentState = STATE_WAIT;
         else
             currentState = STATE_ABORT;
+
+        currentCommand = "";
+        voteNum = ackNum = 0;
+        Arrays.fill(voteStats, false);
+        Arrays.fill(ackStats, false);
     }
 
     /**
@@ -315,8 +388,8 @@ public class Worker {
             if (playlist.containsKey(songName)) {
                 performAbort();
             } else {
-                logWrite("start_3pc:add "+songName+" "+URL);
                 broadcastMsgs("vr add "+songName+" "+URL);
+                waitVote();
             }
         }
     }
@@ -347,8 +420,8 @@ public class Worker {
         }
         else {
             if (playlist.containsKey(songName)) {
-                logWrite("start_3pc:rm "+songName);
                 broadcastMsgs("vr rm "+songName);
+                waitVote();
             } else {
                 performAbort();
             }
@@ -372,7 +445,7 @@ public class Worker {
      */
     public void voteEdit(int senderId, String songName, String newSongName, String URL) {
         if (senderId > 0) {
-            if (playlist.containsKey(songName)) {
+            if (playlist.containsKey(songName) && !playlist.containsKey(newSongName)) {
                 logWrite("yes");
                 netController.sendMsg(leader, String.format("%d v yes", processId));
             } else {
@@ -381,10 +454,9 @@ public class Worker {
             }
         }
         else {
-            if (playlist.containsKey(songName)) {
-                logWrite("start_3pc:e "+songName+" "+newSongName+" "+URL);
+            if (playlist.containsKey(songName) && !playlist.containsKey(newSongName)) {
                 broadcastMsgs("vr e "+songName+" "+newSongName+" "+URL);
-
+                waitVote();
             } else {
                 performAbort();
             }
@@ -416,7 +488,6 @@ public class Worker {
         }
         netController = new NetController(config);
     }
-
 
     /**
      * Unicast to a partner
