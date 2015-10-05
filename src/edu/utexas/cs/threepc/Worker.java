@@ -19,6 +19,7 @@ public class Worker {
     private Map<String, String> playlist;
 
     private String currentCommand;
+    private String currentState;
 
     private Boolean[] voteStats;
     private int voteAgreeNum;
@@ -32,6 +33,12 @@ public class Worker {
     private int    basePort;
     private int    reBuild;
     private NetController netController;
+
+    public static final String STATE_WAIT      = "WAIT";
+    public static final String STATE_VOTE      = "VOTE";
+    public static final String STATE_PRECOMMIT = "PRECOMMIT";
+    public static final String STATE_COMMIT    = "COMMIT";
+    public static final String STATE_ABORT     = "ABORT";
 
     public Worker(int processId, int totalProcess, String hostName, int basePort, int ld, int rebuild) {
         this.processId = processId;
@@ -52,23 +59,28 @@ public class Worker {
 
         playlist = new HashMap<String, String>();
         try {
-            File playlistInit = new File("data/playlist_init_"+processId+".txt");
+            File playlistInit = new File("../data/playlist_init_"+processId+".txt");
             if (playlistInit.exists()) {
                 BufferedReader br = new BufferedReader(new FileReader(playlistInit));
-                String line = null;
+                String line;
                 while((line = br.readLine()) != null) {
-                    String[] splits = line.split(",");
+                    String[] splits = line.split("==>");
+                    if (splits.length != 2) break;
+                    splits[0] = splits[0].trim();
+                    splits[1] = splits[1].trim();
                     playlist.put(splits[0], splits[1]);
+                    terminalLog(String.format("<%s, %s> is imported", splits[0], splits[1]));
                 }
                 br.close();
             }
-            DTLog = new File("log_" + processId + ".txt");
-            if (!DTLog.exists()) {
+            DTLog = new File("../log/dt_" + processId + ".log");
+            if (!DTLog.exists() /*|| reBuild == 0*/) {
+                DTLog.getParentFile().mkdirs();
                 DTLog.createNewFile();
             } else {
                 // Read recovery log and try to reconstruct the state
                 BufferedReader br = new BufferedReader(new FileReader(DTLog));
-                String line = null;
+                String line;
                 while ((line = br.readLine()) != null) {
                     processRecovery(line);
                 }
@@ -79,12 +91,14 @@ public class Worker {
         } catch (IOException e) {
             e.printStackTrace();
         }
+
         processAlive = new Boolean[this.totalProcess +1];
         Arrays.fill(processAlive, true);
         aliveProcessNum = this.totalProcess;
 
         buildSocket();
         getReceivedMsgs(netController);
+        currentState = STATE_WAIT;
     }
 
     public void processRecovery(String message) {
@@ -93,7 +107,7 @@ public class Worker {
             currentCommand = splits[1];
             lastCommandInLog = "start_3pc";
         } else {
-            if (message.equals("abt")) {
+            if (message.equals(STATE_ABORT)) {
                 return;
             } else if (message.equals("c")) {
                 performCommit();
@@ -102,7 +116,7 @@ public class Worker {
             } else if (message.equals("rc")) {
                 return;
             } else {
-                System.err.println("Unrecognized command in recovery log: " + message);
+                terminalLog("unrecognized command in recovery log: " + message);
             }
             lastCommandInLog = message;
         }
@@ -126,14 +140,15 @@ public class Worker {
                         voteRm(senderId, splits[3]);
                         break;
                     default:
-                        System.err.println(String.format("[PARTICIPANT#%d] receives wrong command", processId));
+                        terminalLog("receives wrong command");
                 }
                 break;
             case "v":
+                currentState = STATE_VOTE;
                 countVote(senderId, splits[2]);
                 break;
             case "abt":
-                logWrite("abt");
+                performAbort();
                 break;
             case "rc":
                 sendAcknowledge();
@@ -156,9 +171,39 @@ public class Worker {
                 currentCommand = message;
                 voteRm(senderId, splits[2]);
                 break;
+            case "pl":
+            	printPlayList();
+            	break;
             default:
                 terminalLog("cannot recognize this command: " + splits[0]);
                 break;
+        }
+    }
+
+    /**
+     * Print local playlist to storage
+     */
+    private void printPlayList() {
+        if (processId == leader)
+            broadcastMsgs("pl");
+
+        try {
+            File playlistFile = new File(String.format("../log/playlist_%d.txt", processId));
+            playlistFile.getParentFile().mkdirs();
+            playlistFile.createNewFile();
+
+            BufferedWriter out = new BufferedWriter(new FileWriter(String.format("../log/playlist_%d.txt", processId)));
+
+            Iterator<Map.Entry<String, String>> it = playlist.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<String, String> pairs = it.next();
+                out.write(pairs.getKey() + "\t==>\t" + pairs.getValue() + "\n");
+            }
+
+            out.close();
+            terminalLog("outputs local playlist");
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -177,14 +222,14 @@ public class Worker {
      * @param vote
      */
     public void countVote(int senderId, String vote) {
-        if (vote == "no") {
+        if (vote.equals("no")) {
             Arrays.fill(voteStats, false);
-            logWrite("abt");
-            broadcastMsgs("abt");
+            performAbort();
         }
         else {
             if (!voteStats[senderId]) {
                 voteAgreeNum++;
+                voteStats[senderId] = true;
                 if (voteAgreeNum == aliveProcessNum-1) {
                     logWrite("rc");
                     broadcastMsgs("rc");
@@ -210,7 +255,7 @@ public class Worker {
     }
 
     public void performCommit() {
-        if (currentCommand == "") return;
+        if (currentCommand.equals("")) return;
         String[] splits = currentCommand.split(" ");
 
         switch (splits[2]) {
@@ -233,6 +278,23 @@ public class Worker {
         Arrays.fill(ackStats, false);
     }
 
+    public void performAbort() {
+        if (currentState.equals(STATE_ABORT))
+            return;
+        if (currentState.equals(STATE_WAIT) || currentState.equals(STATE_VOTE)) {
+            terminalLog("aborts the request");
+        }
+        else {
+            terminalLog("aborts the request");
+            broadcastMsgs("abt");
+        }
+        logWrite(STATE_ABORT);
+        if (leader == processId)
+            currentState = STATE_WAIT;
+        else
+            currentState = STATE_ABORT;
+    }
+
     /**
      * Respond to VOTE_REQ
      * @param senderId
@@ -242,7 +304,7 @@ public class Worker {
     public void voteAdd(int senderId, String songName, String URL) {
         if (senderId > 0) {
             if (playlist.containsKey(songName)) {
-                logWrite("abt");
+                performAbort();
                 netController.sendMsg(leader, String.format("%d v no", processId));
             } else {
                 logWrite("yes");
@@ -251,7 +313,7 @@ public class Worker {
         }
         else {
             if (playlist.containsKey(songName)) {
-                netController.sendMsg(0, "Request refused");
+                performAbort();
             } else {
                 logWrite("start_3pc:add "+songName+" "+URL);
                 broadcastMsgs("vr add "+songName+" "+URL);
@@ -279,7 +341,7 @@ public class Worker {
                 logWrite("yes");
                 netController.sendMsg(leader, String.format("%d v yes", processId));
             } else {
-                logWrite("abt");
+                performAbort();
                 netController.sendMsg(leader, String.format("%d v no", processId));
             }
         }
@@ -288,7 +350,7 @@ public class Worker {
                 logWrite("start_3pc:rm "+songName);
                 broadcastMsgs("vr rm "+songName);
             } else {
-                netController.sendMsg(0, "Request refused");
+                performAbort();
             }
         }
     }
@@ -314,7 +376,7 @@ public class Worker {
                 logWrite("yes");
                 netController.sendMsg(leader, String.format("%d v yes", processId));
             } else {
-                logWrite("abt");
+                performAbort();
                 netController.sendMsg(leader, String.format("%d v no", processId));
             }
         }
@@ -324,7 +386,7 @@ public class Worker {
                 broadcastMsgs("vr e "+songName+" "+newSongName+" "+URL);
 
             } else {
-                netController.sendMsg(0, "Request refused");
+                performAbort();
             }
         }
     }
@@ -338,7 +400,7 @@ public class Worker {
     public void edit(String songName, String newSongName, String newSongURL) {
         remove(songName);
         add(newSongName, newSongURL);
-        terminalLog("update <"+songName+"> to <"+newSongName+","+newSongURL+">");
+        terminalLog("update <"+songName+"> to <"+newSongName+", "+newSongURL+">");
     }
 
     public void sendAcknowledge() {

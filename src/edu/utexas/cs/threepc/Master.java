@@ -43,7 +43,7 @@ public class Master {
         totalProcess = n;
 
         for (int i = 1; i <= n; i++) {
-            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+i, ""+totalProcess, hostName, ""+basePort, "1", "1").redirectErrorStream(true);
+            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+i, ""+totalProcess, hostName, ""+basePort, "1", "0").redirectErrorStream(true);
             try {
                 p = pb.start();
                 System.err.println("Process " + i + " [" + p + "] started");
@@ -92,6 +92,13 @@ public class Master {
         }).start();
     }
 
+    /**
+     * Print all playlists of available workers
+     */
+    public void printLists() {
+        netController.sendMsg(leader, "0 pl");
+    }
+    
     /**
      * Used for debugging
      */
@@ -158,7 +165,7 @@ public class Master {
             System.err.println("Proces "+processId+" alrealy exists");
         }
         else {
-            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+processId, ""+totalProcess, hostName, ""+basePort, ""+leader, "0").redirectErrorStream(true);
+            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+processId, ""+totalProcess, hostName, ""+basePort, ""+leader, "1").redirectErrorStream(true);
             try {
                 processList.set(processId, pb.start());
             } catch (IOException e) {
@@ -330,10 +337,14 @@ public class Master {
                     System.err.println("Wrong paramter");
                 }
                 break;
-            case "pp":
+            case "pp": // printParameters
                 m.printParameters();
                 break;
-            case "q":
+            case "pl": // printLists
+                m.printLists();
+            	break;
+            case "quit":
+            case "q":  // quit
                 m.killAll();
                 System.exit(0);
             default:
