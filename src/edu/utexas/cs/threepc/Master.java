@@ -166,6 +166,7 @@ public class Master {
         }
         else {
             ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+processId, ""+totalProcess, hostName, ""+basePort, ""+leader, "1").redirectErrorStream(true);
+            System.err.println("Proces "+processId+" is revived");
             try {
                 processList.set(processId, pb.start());
             } catch (IOException e) {
@@ -197,23 +198,7 @@ public class Master {
     }
 
     public void rejectNextChange(int processId) {
-
-    }
-
-    public void partialCommit(int second) {
-
-    }
-
-    /**
-     * Delay time between each two continuous commands
-     * @param second
-     */
-    public void delay(int second) {
-        delayTime = second;
-    }
-
-    public void deathAfter(int numMessages, int processId) {
-
+        netController.sendMsg(processId, "0 rnc");
     }
 
     public void add(String songName, String URL) {
@@ -263,7 +248,7 @@ public class Master {
                     m.createProcesses(numProcess);
                 }
                 catch (ArrayIndexOutOfBoundsException e) {
-                    System.err.println("Wrong paramter");
+                    System.err.println("Wrong parameter");
                 }
                 break;
             case "k":
@@ -298,22 +283,14 @@ public class Master {
             case "ac":
                 m.allClear();
                 break;
-            case "rnc":
-                int rejectProcessId = Integer.parseInt(splits[1]);
-                m.rejectNextChange(rejectProcessId);
-                break;
-            case "pc":
-                int receiveProcessId = Integer.parseInt(splits[1]);
-                m.partialCommit(receiveProcessId);
-                break;
-            case "d":
-                int delayTime = Integer.parseInt(splits[1]);
-                m.delay(delayTime);
-                break;
-            case "da":
-                int numReceiveMessages = Integer.parseInt(splits[1]);
-                int killSelfProcessId = Integer.parseInt(splits[2]);
-                m.deathAfter(numReceiveMessages, killSelfProcessId);
+            case "rnc": // rejectNextChange
+                try {
+                    int rejectProcessId = Integer.parseInt(splits[1]);
+                    m.rejectNextChange(rejectProcessId);
+                }
+                catch (ArrayIndexOutOfBoundsException e) {
+                    System.err.println("Wrong parameter");
+                }
                 break;
             case "add":
             case "a":
@@ -321,7 +298,7 @@ public class Master {
                     m.add(splits[1], splits[2]);
                 }
                 catch (ArrayIndexOutOfBoundsException e) {
-                    System.err.println("Wrong paramter");
+                    System.err.println("Wrong parameter");
                 }
                 break;
             case "remove":
@@ -334,7 +311,7 @@ public class Master {
                     m.edit(splits[1], splits[2], splits[3]);
                 }
                 catch (ArrayIndexOutOfBoundsException e) {
-                    System.err.println("Wrong paramter");
+                    System.err.println("Wrong parameter");
                 }
                 break;
             case "pp": // printParameters
@@ -363,7 +340,7 @@ public class Master {
                 System.exit(-1);
             }
             try (BufferedReader br = new BufferedReader(new FileReader(f))) {
-                String line = null;
+                String line;
                 while ((line = br.readLine()) != null) {
                     handleRequest(m, line);
                 }

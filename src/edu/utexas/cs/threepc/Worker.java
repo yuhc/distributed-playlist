@@ -31,6 +31,7 @@ public class Worker {
     private Boolean[] processAlive;
     private int aliveProcessNum;
     private Boolean[] hasRespond;
+    private Boolean rejectNextChange;
 
     private String hostName;
     private String lastCommandInLog;
@@ -40,13 +41,17 @@ public class Worker {
 
     public static final String PREFIX_COMMAND    = "COMMAND";
 
-    public static final String STATE_RECOVER     = "RECOVER";
-    public static final String STATE_WAIT        = "WAIT";
+    /* COORDINATOR */
     public static final String STATE_WAITVOTE    = "WAITVOTE";
-    public static final String STATE_VOTED       = "VOTE";
-    public static final String STATE_PRECOMMIT   = "PRECOMMIT";
     public static final String STATE_PRECOMMITED = "PRECOMMITED";
+    public static final String STATE_WAITACK     = "WAITACK";
     public static final String STATE_ACKED       = "ACKED";
+    /* PARTICIPANT */
+    public static final String STATE_VOTED       = "VOTED";
+    public static final String STATE_PRECOMMIT   = "PRECOMMIT";
+    /* BOTH */
+    public static final String STATE_WAIT        = "WAIT";
+    public static final String STATE_RECOVER     = "RECOVER";
     public static final String STATE_COMMIT      = "COMMIT";
     public static final String STATE_ABORT       = "ABORT";
 
@@ -71,6 +76,7 @@ public class Worker {
         Arrays.fill(ackStats, false);
         ackNum = 0;
         hasRespond = new Boolean[this.totalProcess+1];
+        rejectNextChange = false;
 
         playlist = new HashMap<String, String>();
         try {
@@ -89,7 +95,7 @@ public class Worker {
                 br.close();
             }
             DTLog = new File("../log/dt_" + processId + ".log");
-            if (!DTLog.exists() /*|| reBuild == 0*/) {
+            if (!DTLog.exists() || reBuild == 0) {
                 DTLog.getParentFile().mkdirs();
                 DTLog.createNewFile();
             } else {
@@ -125,6 +131,17 @@ public class Worker {
                                 terminalLog(String.format("participant %d times out", i));
                         performAbort();
                         break;
+                    case STATE_WAITACK:
+                        for (int i = 1; i <= totalProcess; i++)
+                            if (i != processId && processAlive[i] && !hasRespond[i])
+                                terminalLog(String.format("participant %d times out", i));
+                        logWrite(STATE_ACKED);
+                        for (int i = 1; i <= totalProcess; i++)
+                            if (i != processId && processAlive[i] && hasRespond[i])
+                                unicastMsgs(i, "c");
+                        currentCommand = "# " + currentCommand; // format the command
+                        performCommit();
+                        break;
                     default:
                         break;
                 }
@@ -136,23 +153,33 @@ public class Worker {
     public void processRecovery(String message) {
         if (message.startsWith(PREFIX_COMMAND)) {
             String[] splits = message.split(":");
-            currentCommand = splits[1];
-            lastCommandInLog = currentCommand;
-        } else {
+            if (splits[1].equals("rnc"))
+                rejectNextChange = true;
+            else
+                currentCommand = splits[1];
+        }
+        else if (!message.startsWith(STATE_RECOVER)){
             switch (message) {
                 case STATE_ABORT:
                     currentCommand = "";
-                    return;
+                    currentState = message;
+                    break;
                 case STATE_COMMIT:
                     performCommit();
                 case "yes":
                     return;
+                case "no":
+                    currentCommand = "";
+                    currentState = STATE_ABORT;
+                    break;
+                case STATE_PRECOMMITED:
                 case STATE_PRECOMMIT:
+                case STATE_ACKED:
+                    currentState = message;
                     return;
                 default:
                     terminalLog("unrecognized command in recovery log: " + message);
             }
-            lastCommandInLog = message;
         }
     }
 
@@ -203,6 +230,10 @@ public class Worker {
                 currentCommand = message;
                 voteEdit(senderId, splits[2], splits[3], splits[4]);
                 break;
+            case "rnc":
+                rejectNextChange = true;
+                logWrite(PREFIX_COMMAND+":rnc");
+                break;
             case "rm":
                 currentCommand = message;
                 voteRm(senderId, splits[2]);
@@ -252,6 +283,9 @@ public class Worker {
         }
     }
 
+    /**
+     * Wait participants to vote
+     */
     public void waitVote() {
         logWrite(PREFIX_COMMAND+":# "+currentCommand);
         timer.start();
@@ -283,9 +317,21 @@ public class Worker {
                     timer.stop();
                     logWrite(STATE_PRECOMMITED);
                     broadcastMsgs("rc");
+                    waitAck();
                 }
             }
         }
+    }
+
+    /**
+     * Wait participants to reply ACK
+     */
+    public void waitAck() {
+        logWrite(STATE_PRECOMMITED);
+        timer.start();
+        ackNum = 0;
+        currentState = STATE_WAITACK;
+        Arrays.fill(hasRespond, false);
     }
 
     /**
@@ -293,9 +339,11 @@ public class Worker {
      * @param senderId
      */
     public void countAck(int senderId) {
+        ackNum++;
+        hasRespond[senderId] = true;
         if (!ackStats[senderId]) {
-            ackNum++;
             if (ackNum == aliveProcessNum-1) {
+                timer.stop();
                 logWrite(STATE_ACKED);
                 broadcastMsgs("c");
                 currentCommand = "# " + currentCommand; // format the command
@@ -376,7 +424,7 @@ public class Worker {
      */
     public void voteAdd(int senderId, String songName, String URL) {
         if (senderId > 0) {
-            if (playlist.containsKey(songName)) {
+            if (playlist.containsKey(songName) || rejectNextChange) {
                 performAbort();
                 netController.sendMsg(leader, String.format("%d v no", processId));
             } else {
@@ -385,13 +433,14 @@ public class Worker {
             }
         }
         else {
-            if (playlist.containsKey(songName)) {
+            if (playlist.containsKey(songName) || rejectNextChange) {
                 performAbort();
             } else {
                 broadcastMsgs("vr add "+songName+" "+URL);
                 waitVote();
             }
         }
+        rejectNextChange = false;
     }
 
     /**
@@ -410,7 +459,7 @@ public class Worker {
      */
     public void voteRm(int senderId, String songName) {
         if (senderId > 0) {
-            if (playlist.containsKey(songName)) {
+            if (playlist.containsKey(songName) && !rejectNextChange) {
                 logWrite("yes");
                 netController.sendMsg(leader, String.format("%d v yes", processId));
             } else {
@@ -419,13 +468,14 @@ public class Worker {
             }
         }
         else {
-            if (playlist.containsKey(songName)) {
+            if (playlist.containsKey(songName) && !rejectNextChange) {
                 broadcastMsgs("vr rm "+songName);
                 waitVote();
             } else {
                 performAbort();
             }
         }
+        rejectNextChange = false;
     }
 
     /**
@@ -445,7 +495,7 @@ public class Worker {
      */
     public void voteEdit(int senderId, String songName, String newSongName, String URL) {
         if (senderId > 0) {
-            if (playlist.containsKey(songName) && !playlist.containsKey(newSongName)) {
+            if (playlist.containsKey(songName) && !playlist.containsKey(newSongName) && !rejectNextChange) {
                 logWrite("yes");
                 netController.sendMsg(leader, String.format("%d v yes", processId));
             } else {
@@ -454,13 +504,14 @@ public class Worker {
             }
         }
         else {
-            if (playlist.containsKey(songName) && !playlist.containsKey(newSongName)) {
+            if (playlist.containsKey(songName) && !playlist.containsKey(newSongName) && !rejectNextChange) {
                 broadcastMsgs("vr e "+songName+" "+newSongName+" "+URL);
                 waitVote();
             } else {
                 performAbort();
             }
         }
+        rejectNextChange = false;
     }
 
     /**
