@@ -3,6 +3,7 @@
 !build.xml
 
 # blacklist
+.project
 *.xml
 build/*
 .idea/*
