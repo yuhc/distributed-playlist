@@ -76,11 +76,14 @@ public class Worker {
                 currentCommand = message;
                 switch (splits[2]) {
                     case "add":
+                        voteAdd(sender_id, splits[3], splits[4]);
+                        break;
                     case "e":
-                        voteAddEdit(sender_id, splits[3], message);
+                        voteEdit(sender_id, splits[3], splits[4], splits[5]);
                         break;
                     case "rm":
                         voteRm(sender_id, splits[3]);
+                        break;
                     default:
                         System.err.println(String.format("[PARTICIPANT#%d] receives wrong command", processId));
                 }
@@ -100,9 +103,12 @@ public class Worker {
                 performCommit();
                 break;
             case "add":
+                currentCommand = message;
+                voteAdd(sender_id, splits[2], splits[3]);
+                break;
             case "e":
                 currentCommand = message;
-                voteAddEdit(sender_id, splits[2], message);
+                voteEdit(sender_id, splits[2], splits[3], splits[4]);
                 break;
             case "rm":
                 currentCommand = message;
@@ -168,13 +174,18 @@ public class Worker {
         }
 
         currentCommand = "";
+        voteAgreeNum = ackNum = 0;
+        Arrays.fill(voteStats, false);
+        Arrays.fill(ackStats, false);
     }
 
     /**
      * Respond to VOTE_REQ
+     * @param sender_id
      * @param songName
+     * @param URL
      */
-    public void voteAddEdit(int sender_id, String songName, String message) {
+    public void voteAdd(int sender_id, String songName, String URL) {
         if (sender_id > 0) {
             if (playlist.containsKey(songName)) {
                 netController.sendMsg(leader, String.format("%d v no", processId));
@@ -186,11 +197,7 @@ public class Worker {
             if (playlist.containsKey(songName)) {
                 netController.sendMsg(0, "Request refused");
             } else {
-                String newCommand = "vr";
-                String[] splits = message.split(" ");
-                for (int i = 1; i < splits.length; i++)
-                    newCommand += " "+splits[i];
-                broadcastMsgs(newCommand);
+                broadcastMsgs("vr add "+songName+" "+URL);
             }
         }
     }
@@ -219,7 +226,7 @@ public class Worker {
         }
         else {
             if (playlist.containsKey(songName)) {
-                broadcastMsgs("vr add "+songName);
+                broadcastMsgs("vr rm "+songName);
             } else {
                 netController.sendMsg(0, "Request refused");
             }
@@ -233,6 +240,29 @@ public class Worker {
     public void remove(String songName) {
         playlist.remove(songName);
         terminalLog("remove <"+songName+">");
+    }
+
+    /**
+     * Respond to VOTE_REQ
+     * @param sender_id
+     * @param songName
+     * @param URL
+     */
+    public void voteEdit(int sender_id, String songName, String newSongName, String URL) {
+        if (sender_id > 0) {
+            if (playlist.containsKey(songName)) {
+                netController.sendMsg(leader, String.format("%d v yes", processId));
+            } else {
+                netController.sendMsg(leader, String.format("%d v no", processId));
+            }
+        }
+        else {
+            if (playlist.containsKey(songName)) {
+                broadcastMsgs("vr e "+songName+" "+newSongName+" "+URL);
+            } else {
+                netController.sendMsg(0, "Request refused");
+            }
+        }
     }
 
     /**
@@ -293,7 +323,7 @@ public class Worker {
                 while (true) {
                     List<String> receivedMsgs = new ArrayList<String>(netController.getReceivedMsgs());
                     for (int i = 0; i < receivedMsgs.size(); i++) {
-                        System.err.println(String.format("[PROCESS#%d] receive \"%s\"", processId, receivedMsgs.get(i)));
+                        terminalLog(String.format("receive \"%s\"", receivedMsgs.get(i)));
                         processMessage(receivedMsgs.get(i));
                     }
                 }

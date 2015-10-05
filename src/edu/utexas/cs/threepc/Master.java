@@ -217,8 +217,8 @@ public class Master {
         netController.sendMsg(leader, "0 rm "+songName);
     }
 
-    public void edit(String songName, String URL, String newURL) {
-        netController.sendMsg(leader, "0 e "+songName+" "+URL+" "+newURL);
+    public void edit(String songName, String newSongName, String newURL) {
+        netController.sendMsg(leader, "0 e "+songName+" "+newSongName+" "+newURL);
     }
 
     /**
@@ -323,7 +323,12 @@ public class Master {
                 break;
             case "edit":
             case "e":
-                m.edit(splits[1], splits[2], splits[3]);
+                try {
+                    m.edit(splits[1], splits[2], splits[3]);
+                }
+                catch (ArrayIndexOutOfBoundsException e) {
+                    System.err.println("Wrong paramter");
+                }
                 break;
             case "pp":
                 m.printParameters();
