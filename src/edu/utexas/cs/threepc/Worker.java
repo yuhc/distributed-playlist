@@ -32,26 +32,26 @@ public class Worker {
     private int    reBuild;
     private NetController netController;
 
-    public Worker(int process_id, int total_process, String host_name, int base_port, int ld, int rebuild) {
-        processId = process_id;
-        totalProcess = total_process;
-        hostName = host_name;
-        basePort = base_port;
+    public Worker(int processId, int totalProcess, String hostName, int basePort, int ld, int rebuild) {
+        this.processId = processId;
+        this.totalProcess = totalProcess;
+        this.hostName = hostName;
+        this.basePort = basePort;
         leader = ld;
         reBuild = rebuild;
 
         currentCommand = "";
 
-        voteStats = new Boolean[totalProcess+1];
+        voteStats = new Boolean[this.totalProcess +1];
         Arrays.fill(voteStats, false);
         voteAgreeNum = 0;
-        ackStats = new Boolean[totalProcess+1];
+        ackStats = new Boolean[this.totalProcess +1];
         Arrays.fill(ackStats, false);
         ackNum = 0;
 
         playlist = new HashMap<String, String>();
         try {
-            DTLog = new File("log_" + process_id + ".txt");
+            DTLog = new File("log_" + processId + ".txt");
             if (!DTLog.exists()) {
                 DTLog.createNewFile();
             }
@@ -59,9 +59,9 @@ public class Worker {
             e.printStackTrace();
         }
 
-        processAlive = new Boolean[totalProcess+1];
+        processAlive = new Boolean[this.totalProcess +1];
         Arrays.fill(processAlive, true);
-        aliveProcessNum = totalProcess;
+        aliveProcessNum = this.totalProcess;
 
         buildSocket();
         getReceivedMsgs(netController);
@@ -70,49 +70,50 @@ public class Worker {
     public void processMessage(String message) {
         String[] splits = message.split(" ");
 
-        int sender_id = Integer.parseInt(splits[0]);
+        int senderId = Integer.parseInt(splits[0]);
         switch (splits[1]) {
             case "vr":
                 currentCommand = message;
                 switch (splits[2]) {
                     case "add":
-                        voteAdd(sender_id, splits[3], splits[4]);
+                        voteAdd(senderId, splits[3], splits[4]);
                         break;
                     case "e":
-                        voteEdit(sender_id, splits[3], splits[4], splits[5]);
+                         voteEdit(senderId, splits[3], splits[4], splits[5]);
                         break;
                     case "rm":
-                        voteRm(sender_id, splits[3]);
+                        voteRm(senderId, splits[3]);
                         break;
                     default:
                         System.err.println(String.format("[PARTICIPANT#%d] receives wrong command", processId));
                 }
                 break;
             case "v":
-                countVote(sender_id, splits[2]);
+                countVote(senderId, splits[2]);
                 break;
             case "abt":
+                logWrite("abt");
                 break;
             case "rc":
                 sendAcknowledge();
                 break;
             case "ack":
-                countAck(sender_id);
+                countAck(senderId);
                 break;
             case "c":
                 performCommit();
                 break;
             case "add":
                 currentCommand = message;
-                voteAdd(sender_id, splits[2], splits[3]);
+                voteAdd(senderId, splits[2], splits[3]);
                 break;
             case "e":
                 currentCommand = message;
-                voteEdit(sender_id, splits[2], splits[3], splits[4]);
+                voteEdit(senderId, splits[2], splits[3], splits[4]);
                 break;
             case "rm":
                 currentCommand = message;
-                voteRm(sender_id, splits[2]);
+                voteRm(senderId, splits[2]);
                 break;
             default:
                 terminalLog("cannot recognize this command: " + splits[0]);
@@ -120,20 +121,31 @@ public class Worker {
         }
     }
 
+    private void logWrite(String str) {
+        try (PrintWriter pw = new PrintWriter(new BufferedWriter(new FileWriter(DTLog, true)))) {
+            pw.println(str);
+            pw.flush();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     /**
      * Count the number of received VOTE
-     * @param sender_id
+     * @param senderId
      * @param vote
      */
-    public void countVote(int sender_id, String vote) {
+    public void countVote(int senderId, String vote) {
         if (vote == "no") {
             Arrays.fill(voteStats, false);
+            logWrite("abt");
             broadcastMsgs("abt");
         }
         else {
-            if (!voteStats[sender_id]) {
+            if (!voteStats[senderId]) {
                 voteAgreeNum++;
                 if (voteAgreeNum == aliveProcessNum-1) {
+                    logWrite("rc");
                     broadcastMsgs("rc");
                 }
             }
@@ -142,12 +154,13 @@ public class Worker {
 
     /**
      * Count the number of received ACK
-     * @param sender_id
+     * @param senderId
      */
-    public void countAck(int sender_id) {
-        if (!ackStats[sender_id]) {
+    public void countAck(int senderId) {
+        if (!ackStats[senderId]) {
             ackNum++;
             if (ackNum == aliveProcessNum-1) {
+                logWrite("c");
                 broadcastMsgs("c");
                 currentCommand = "# " + currentCommand; // format the command
                 performCommit();
@@ -181,15 +194,17 @@ public class Worker {
 
     /**
      * Respond to VOTE_REQ
-     * @param sender_id
+     * @param senderId
      * @param songName
      * @param URL
      */
-    public void voteAdd(int sender_id, String songName, String URL) {
-        if (sender_id > 0) {
+    public void voteAdd(int senderId, String songName, String URL) {
+        if (senderId > 0) {
             if (playlist.containsKey(songName)) {
+                logWrite("abt");
                 netController.sendMsg(leader, String.format("%d v no", processId));
             } else {
+                logWrite("yes");
                 netController.sendMsg(leader, String.format("%d v yes", processId));
             }
         }
@@ -197,6 +212,7 @@ public class Worker {
             if (playlist.containsKey(songName)) {
                 netController.sendMsg(0, "Request refused");
             } else {
+                logWrite("start_3pc:add "+songName+" "+URL);
                 broadcastMsgs("vr add "+songName+" "+URL);
             }
         }
@@ -216,16 +232,19 @@ public class Worker {
      * Respond to VOTE_REQ
      * @param songName
      */
-    public void voteRm(int sender_id, String songName) {
-        if (sender_id > 0) {
+    public void voteRm(int senderId, String songName) {
+        if (senderId > 0) {
             if (playlist.containsKey(songName)) {
+                logWrite("yes");
                 netController.sendMsg(leader, String.format("%d v yes", processId));
             } else {
+                logWrite("abt");
                 netController.sendMsg(leader, String.format("%d v no", processId));
             }
         }
         else {
             if (playlist.containsKey(songName)) {
+                logWrite("start_3pc:rm "+songName);
                 broadcastMsgs("vr rm "+songName);
             } else {
                 netController.sendMsg(0, "Request refused");
@@ -244,21 +263,25 @@ public class Worker {
 
     /**
      * Respond to VOTE_REQ
-     * @param sender_id
+     * @param senderId
      * @param songName
      * @param URL
      */
-    public void voteEdit(int sender_id, String songName, String newSongName, String URL) {
-        if (sender_id > 0) {
+    public void voteEdit(int senderId, String songName, String newSongName, String URL) {
+        if (senderId > 0) {
             if (playlist.containsKey(songName)) {
+                logWrite("yes");
                 netController.sendMsg(leader, String.format("%d v yes", processId));
             } else {
+                logWrite("abt");
                 netController.sendMsg(leader, String.format("%d v no", processId));
             }
         }
         else {
             if (playlist.containsKey(songName)) {
+                logWrite("start_3pc:e "+songName+" "+newSongName+" "+URL);
                 broadcastMsgs("vr e "+songName+" "+newSongName+" "+URL);
+
             } else {
                 netController.sendMsg(0, "Request refused");
             }
@@ -294,11 +317,11 @@ public class Worker {
 
     /**
      * Unicast to a partner
-     * @param dest_id
+     * @param destId
      * @param instruction
      */
-    private void unicastMsgs(int dest_id, String instruction) {
-        netController.sendMsg(dest_id, String.format("%d %s", processId, instruction));
+    private void unicastMsgs(int destId, String instruction) {
+        netController.sendMsg(destId, String.format("%d %s", processId, instruction));
     }
 
     /**
@@ -332,7 +355,7 @@ public class Worker {
     }
 
     private void terminalLog(String message) {
-        System.err.println(String.format("[%s#%d] %s", processId==leader?"COORDINATOR":"PARTICIPANT", processId, message));
+        System.out.println(String.format("[%s#%d] %s", processId == leader ? "COORDINATOR" : "PARTICIPANT", processId, message));
     }
 
     public static void main(String args[]) {
