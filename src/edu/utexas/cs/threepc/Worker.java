@@ -106,6 +106,7 @@ public class Worker {
                 while ((line = br.readLine()) != null) {
                     processRecovery(line);
                 }
+
                 // TODO: not finished for recovery
                 // Need to process the last state if it is not commit or abort.
                 br.close();
@@ -163,6 +164,7 @@ public class Worker {
                 currentCommand = splits[1];
         }
         else if (!message.startsWith(STATE_RECOVER)){
+            // TODO: I think recovery is not fully implemented.
             switch (message) {
                 case STATE_ABORT:
                     currentCommand = "";
@@ -331,7 +333,6 @@ public class Worker {
      * Wait participants to reply ACK
      */
     public void waitAck() {
-        logWrite(STATE_PRECOMMITED);
         timer.start();
         ackNum = 0;
         currentState = STATE_WAITACK;
@@ -421,6 +422,9 @@ public class Worker {
     }
 
 
+    /**
+     * @return
+     */
     private String aliveProcessList() {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < processAlive.length; i++) {
