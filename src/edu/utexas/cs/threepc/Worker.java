@@ -109,6 +109,12 @@ public class Worker {
 
                 // TODO: not finished for recovery
                 // Need to process the last state if it is not commit or abort.
+                if (!currentState.equals(STATE_ABORT) || !currentState.equals(STATE_COMMIT)) {
+                    // TODO: How do I know whether I have sent "yes" out
+                    // If p writes yes to log but crash before send it, c will time out on receiving vote on p and c will decide abort
+                    // If p writes yes to log sends the vote but crash immediately, c will time out on getting ack from p
+                    // c will decide commit....How to handle this problem? 
+                }
                 br.close();
             }
         } catch (IOException e) {
