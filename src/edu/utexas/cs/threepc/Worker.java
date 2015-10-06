@@ -55,9 +55,9 @@ public class Worker {
     public static final String STATE_COMMIT      = "COMMIT";
     public static final String STATE_ABORT       = "ABORT";
 
-    Timer timer;
+    private Timer timer;
     public static final int    TIME_OUT        = 3000;
-    int   decision;
+    private int   decision;
 
     public Worker(final int processId, final int totalProcess, String hostName, int basePort, int ld, int rebuild) {
         this.processId = processId;
@@ -107,7 +107,7 @@ public class Worker {
                     processRecovery(line);
                 }
                 // TODO: not finished for recovery
-                // Need to get some indication of timeout
+                // Need to process the last state if it is not commit or abort.
                 br.close();
             }
         } catch (IOException e) {
@@ -127,14 +127,18 @@ public class Worker {
                 switch (currentState) {
                     case STATE_WAITVOTE:
                         for (int i = 1; i <= totalProcess; i++)
-                            if (i != processId && processAlive[i] && !hasRespond[i])
+                            if (i != processId && processAlive[i] && !hasRespond[i]) {
                                 terminalLog(String.format("participant %d times out", i));
+                                processAlive[i] = false;
+                            }
                         performAbort();
                         break;
                     case STATE_WAITACK:
                         for (int i = 1; i <= totalProcess; i++)
-                            if (i != processId && processAlive[i] && !hasRespond[i])
+                            if (i != processId && processAlive[i] && !hasRespond[i]) {
                                 terminalLog(String.format("participant %d times out", i));
+                                processAlive[i] = false;
+                            }
                         logWrite(STATE_ACKED);
                         for (int i = 1; i <= totalProcess; i++)
                             if (i != processId && processAlive[i] && hasRespond[i])
@@ -142,7 +146,7 @@ public class Worker {
                         currentCommand = "# " + currentCommand; // format the command
                         performCommit();
                         break;
-                    default:
+                    default: // Termination protocol?
                         break;
                 }
             }
