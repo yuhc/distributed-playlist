@@ -146,7 +146,7 @@ public class Worker {
                         currentCommand = "# " + currentCommand; // format the command
                         performCommit();
                         break;
-                    default: // Termination protocol?
+                    default: // TODO: Termination protocol here?
                         break;
                 }
             }
@@ -198,13 +198,13 @@ public class Worker {
                 currentState = STATE_VOTED;
                 switch (splits[2]) {
                     case "add":
-                        voteAdd(senderId, splits[3], splits[4]);
+                        voteAddParticipant(splits[3], splits[5]);
                         break;
                     case "e":
-                         voteEdit(senderId, splits[3], splits[4], splits[5]);
+                        voteEditParticipant(splits[3], splits[4], splits[6]);
                         break;
                     case "rm":
-                        voteRm(senderId, splits[3]);
+                        voteRmParticipant(splits[3], splits[5]);
                         break;
                     default:
                         terminalLog("receives wrong command");
@@ -228,11 +228,11 @@ public class Worker {
                 break;
             case "add":
                 currentCommand = message;
-                voteAdd(senderId, splits[2], splits[3]);
+                voteAddCoordinator(splits[2], splits[3]);
                 break;
             case "e":
                 currentCommand = message;
-                voteEdit(senderId, splits[2], splits[3], splits[4]);
+                voteEditCoordinator(splits[2], splits[3], splits[4]);
                 break;
             case "rnc":
                 rejectNextChange = true;
@@ -240,7 +240,7 @@ public class Worker {
                 break;
             case "rm":
                 currentCommand = message;
-                voteRm(senderId, splits[2]);
+                voteRmCoordinator(splits[2]);
                 break;
             case "pl":
             	printPlayList();
@@ -435,27 +435,26 @@ public class Worker {
 
     /**
      * Respond to VOTE_REQ
-     * @param senderId
      * @param songName
      * @param URL
      */
-    public void voteAdd(int senderId, String songName, String URL) {
-        if (senderId > 0) {
-            if (playlist.containsKey(songName) || rejectNextChange) {
+    public void voteAddCoordinator(String songName, String URL) {
+        if (playlist.containsKey(songName) || rejectNextChange) {
                 performAbort();
-                netController.sendMsg(leader, String.format("%d v no", processId));
-            } else {
-                logWrite("yes");
-                netController.sendMsg(leader, String.format("%d v yes", processId));
-            }
+        } else {
+            broadcastMsgs("vr add "+songName+" "+URL+" "+aliveProcessList());
+            waitVote();
         }
-        else {
-            if (playlist.containsKey(songName) || rejectNextChange) {
-                performAbort();
-            } else {
-                broadcastMsgs("vr add "+songName+" "+URL+" "+aliveProcessList());
-                waitVote();
-            }
+        rejectNextChange = false;
+    }
+
+    public void voteAddParticipant(String songName, String aliveProcess) {
+        if (playlist.containsKey(songName) || rejectNextChange) {
+            performAbort();
+            netController.sendMsg(leader, String.format("%d v no", processId));
+        } else {
+            logWrite("yes:"+aliveProcess);
+            netController.sendMsg(leader, String.format("%d v yes", processId));
         }
         rejectNextChange = false;
     }
@@ -474,23 +473,23 @@ public class Worker {
      * Respond to VOTE_REQ
      * @param songName
      */
-    public void voteRm(int senderId, String songName) {
-        if (senderId > 0) {
-            if (playlist.containsKey(songName) && !rejectNextChange) {
-                logWrite("yes");
-                netController.sendMsg(leader, String.format("%d v yes", processId));
-            } else {
-                performAbort();
-                netController.sendMsg(leader, String.format("%d v no", processId));
-            }
+    public void voteRmCoordinator(String songName) {
+        if (playlist.containsKey(songName) && !rejectNextChange) {
+            broadcastMsgs("vr rm "+songName+" "+aliveProcessList());
+            waitVote();
+        } else {
+            performAbort();
         }
-        else {
-            if (playlist.containsKey(songName) && !rejectNextChange) {
-                broadcastMsgs("vr rm "+songName+" "+aliveProcessList());
-                waitVote();
-            } else {
-                performAbort();
-            }
+        rejectNextChange = false;
+    }
+
+    public void voteRmParticipant(String songName, String aliveProcess) {
+        if (playlist.containsKey(songName) && !rejectNextChange) {
+            logWrite("yes:"+aliveProcess);
+            netController.sendMsg(leader, String.format("%d v yes", processId));
+        } else {
+            performAbort();
+            netController.sendMsg(leader, String.format("%d v no", processId));
         }
         rejectNextChange = false;
     }
@@ -506,27 +505,26 @@ public class Worker {
 
     /**
      * Respond to VOTE_REQ
-     * @param senderId
      * @param songName
      * @param URL
      */
-    public void voteEdit(int senderId, String songName, String newSongName, String URL) {
-        if (senderId > 0) {
-            if (playlist.containsKey(songName) && !playlist.containsKey(newSongName) && !rejectNextChange) {
-                logWrite("yes");
-                netController.sendMsg(leader, String.format("%d v yes", processId));
-            } else {
-                performAbort();
-                netController.sendMsg(leader, String.format("%d v no", processId));
-            }
+    public void voteEditCoordinator(String songName, String newSongName, String URL) {
+        if (playlist.containsKey(songName) && !playlist.containsKey(newSongName) && !rejectNextChange) {
+            broadcastMsgs("vr e "+songName+" "+newSongName+" "+URL+" "+aliveProcessList());
+            waitVote();
+        } else {
+            performAbort();
         }
-        else {
-            if (playlist.containsKey(songName) && !playlist.containsKey(newSongName) && !rejectNextChange) {
-                broadcastMsgs("vr e "+songName+" "+newSongName+" "+URL+" "+aliveProcessList());
-                waitVote();
-            } else {
-                performAbort();
-            }
+        rejectNextChange = false;
+    }
+
+    public void voteEditParticipant(String songName, String newSongName, String aliveProcess) {
+        if (playlist.containsKey(songName) && !playlist.containsKey(newSongName) && !rejectNextChange) {
+            logWrite("yes:"+aliveProcess);
+            netController.sendMsg(leader, String.format("%d v yes", processId));
+        } else {
+            performAbort();
+            netController.sendMsg(leader, String.format("%d v no", processId));
         }
         rejectNextChange = false;
     }
@@ -615,6 +613,4 @@ public class Worker {
         Worker w = new Worker(processId, totalProcess, hostName, basePort, leader, reBuild);
         System.out.println("[process "+processId+"] started");
     }
-
-
 }
