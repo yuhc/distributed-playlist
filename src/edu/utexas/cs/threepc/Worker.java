@@ -420,6 +420,19 @@ public class Worker {
         Arrays.fill(ackStats, false);
     }
 
+
+    private String aliveProcessList() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < processAlive.length; i++) {
+            if (processAlive[i]) {
+                sb.append(i);
+                sb.append(":");
+            }
+        }
+        sb.deleteCharAt(sb.length()-1);
+        return sb.toString();
+    }
+
     /**
      * Respond to VOTE_REQ
      * @param senderId
@@ -440,7 +453,7 @@ public class Worker {
             if (playlist.containsKey(songName) || rejectNextChange) {
                 performAbort();
             } else {
-                broadcastMsgs("vr add "+songName+" "+URL);
+                broadcastMsgs("vr add "+songName+" "+URL+" "+aliveProcessList());
                 waitVote();
             }
         }
@@ -473,7 +486,7 @@ public class Worker {
         }
         else {
             if (playlist.containsKey(songName) && !rejectNextChange) {
-                broadcastMsgs("vr rm "+songName);
+                broadcastMsgs("vr rm "+songName+" "+aliveProcessList());
                 waitVote();
             } else {
                 performAbort();
@@ -509,7 +522,7 @@ public class Worker {
         }
         else {
             if (playlist.containsKey(songName) && !playlist.containsKey(newSongName) && !rejectNextChange) {
-                broadcastMsgs("vr e "+songName+" "+newSongName+" "+URL);
+                broadcastMsgs("vr e "+songName+" "+newSongName+" "+URL+" "+aliveProcessList());
                 waitVote();
             } else {
                 performAbort();
