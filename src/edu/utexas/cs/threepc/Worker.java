@@ -216,7 +216,7 @@ public class Worker {
             case "abt":
                 performAbort();
                 break;
-            case "rc": // PRECOMMIT
+            case "pc": // PRECOMMIT
                 logWrite(STATE_PRECOMMIT);
                 sendAcknowledge();
                 break;
@@ -320,7 +320,7 @@ public class Worker {
                 if (voteNum == aliveProcessNum-1 && decision == 1) {
                     timer.stop();
                     logWrite(STATE_PRECOMMITED);
-                    broadcastMsgs("rc");
+                    broadcastMsgs("pc");
                     waitAck();
                 }
             }
