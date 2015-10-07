@@ -165,10 +165,12 @@ public class Master {
             System.err.println("Proces "+processId+" alrealy exists");
         }
         else {
-            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+processId, "0", hostName, ""+basePort, ""+leader, "1").redirectErrorStream(true);
-            System.err.println("Proces "+processId+" is revived");
+            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", "" + processId, "0", hostName, "" + basePort, "" + leader, "1").redirectErrorStream(true);
             try {
-                processList.set(processId, pb.start());
+                Process p = pb.start();
+                System.err.println("Process " + processId + " [" + p + "] revived");
+                inheritIO(p.getInputStream(), System.err);
+                processList.set(processId, p);
             } catch (IOException e) {
                 e.printStackTrace();
             }

@@ -122,6 +122,7 @@ public class Worker {
                 DTLog.createNewFile();
             } else {
                 // Read recovery log and try to reconstruct the state
+                terminalLog("I'm recovering");
                 currentState = STATE_RECOVER;
                 BufferedReader br = new BufferedReader(new FileReader(DTLog));
                 String line;
