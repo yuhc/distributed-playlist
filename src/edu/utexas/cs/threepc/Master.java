@@ -165,7 +165,7 @@ public class Master {
             System.err.println("Proces "+processId+" alrealy exists");
         }
         else {
-            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+processId, ""+totalProcess, hostName, ""+basePort, ""+leader, "1").redirectErrorStream(true);
+            ProcessBuilder pb = new ProcessBuilder("java", "-jar", "./worker.jar", ""+processId, "0", hostName, ""+basePort, ""+leader, "1").redirectErrorStream(true);
             System.err.println("Proces "+processId+" is revived");
             try {
                 processList.set(processId, pb.start());

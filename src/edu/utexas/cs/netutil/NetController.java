@@ -74,17 +74,17 @@ public class NetController {
 						outSockets[process].cleanShutdown();
 	                	outSockets[process] = null;
 					}
-					config.logger.info(String.format("Server %d: Msg to %d failed.",
-                        config.procNo, process));
+//					config.logger.info(String.format("Server %d: Msg to %d failed.",
+//                      config.procNo, process));
         		    config.logger.log(Level.FINE, String.format("Server %d: Socket to %d error",
                         config.procNo, process), e);
                     return false;
 				}
 				return true;
 			}
-			config.logger.info(String.format("Server %d: Msg to %d failed.", 
-				config.procNo, process));
-			config.logger.log(Level.FINE, String.format("Server %d: Socket to %d error", 
+//			config.logger.info(String.format("Server %d: Msg to %d failed.",
+//				config.procNo, process));
+			config.logger.log(Level.FINE, String.format("Server %d: Socket to %d error",
 				config.procNo, process), e);
 			return false;
 		}
