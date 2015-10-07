@@ -25,13 +25,15 @@ public class Worker {
     private String currentState;
 
     private Boolean[] voteStats;
-    private int voteNum;
+    private int       voteNum;
     private Boolean[] ackStats;
-    private int ackNum;
+    private int       ackNum;
     private Boolean[] processAlive;
-    private int aliveProcessNum;
+    private int       aliveProcessNum;
     private Boolean[] hasRespond;
-    private Boolean rejectNextChange;
+    private Boolean   rejectNextChange;
+    private Boolean[] stateReqAck;
+    private int       stateReqAckNum;
 
     private String hostName;
     private String lastCommandInLog;
@@ -75,7 +77,6 @@ public class Worker {
     public Worker(final int processId, final int totalProcess, String hostName, int basePort, int ld, int rebuild) {
         this.processId = processId;
         this.totalProcess = totalProcess;
-        terminalLog("process num"+totalProcess);
         this.hostName = hostName;
         this.basePort = basePort;
         leader = ld;
@@ -90,7 +91,11 @@ public class Worker {
         Arrays.fill(ackStats, false);
         ackNum = 0;
         hasRespond = new Boolean[this.totalProcess+1];
+        Arrays.fill(hasRespond, false);
         rejectNextChange = false;
+        stateReqAckNum = 0;
+        stateReqAck = new Boolean[this.totalProcess+1];
+        Arrays.fill(stateReqAck, false);
 
         currentState = STATE_WAIT;
 
@@ -174,14 +179,23 @@ public class Worker {
         });
         timer.setRepeats(false);
 
-        processAlive = new Boolean[this.totalProcess +1];
-        Arrays.fill(processAlive, true);
-        aliveProcessNum = this.totalProcess;
+        if (totalProcess > 0) {
+            logWrite(PREFIX_PROCNUM+totalProcess);
+            processAlive = new Boolean[this.totalProcess + 1];
+            Arrays.fill(processAlive, true);
+            aliveProcessNum = this.totalProcess;
+        }
 
         // Send STATE_REQ
         if (rebuild == 0 && processId != leader || rebuild == 1) {
-            broadcastMsgs("sr");
-            timer.start();
+            if (rebuild == 0) {
+                unicastMsgs(leader, "sr");
+            }
+            else {
+                Arrays.fill(processAlive, false);
+                broadcastMsgs("sr");
+                timer.start();
+            }
         }
     }
 
@@ -299,7 +313,8 @@ public class Worker {
                 unicastMsgs(senderId, "sa "+totalProcess+" "+currentState+" "+aliveProcessList());
                 break;
             case "sa": // STATE_ACK
-                countStateAck();
+                int totalProcessNum = Integer.parseInt(splits[2]);
+                countStateAck(senderId, totalProcessNum, splits[3], splits[4]);
                 break;
             default:
                 terminalLog("cannot recognize this command: " + splits[0]);
@@ -343,8 +358,20 @@ public class Worker {
         }
     }
 
-    public void countStateAck() {
+    public void countStateAck(int senderId, int totalProcessNum, String state, String aliveList) {
+        if (reBuild == 0) { // initial
+            updateProcessList(aliveList);
+            logWrite(PREFIX_PROCNUM+totalProcessNum);
+            totalProcess = totalProcessNum;
+            processAlive = new Boolean[this.totalProcess + 1];
+            Arrays.fill(processAlive, true);
+            aliveProcessNum = this.totalProcess;
+        }
+        else {              // ask for help or recover
+            stateReqAckNum++;
+            processAlive[senderId] = true;
 
+        }
     }
 
     /**
@@ -365,6 +392,10 @@ public class Worker {
      * @param vote
      */
     public void countVote(int senderId, String vote) {
+        if (!processAlive[senderId]) {
+            aliveProcessNum++;
+            processAlive[senderId] = true;
+        }
         voteNum++;
         hasRespond[senderId] = true;
         if (vote.equals("no")) {
@@ -402,6 +433,10 @@ public class Worker {
      * @param senderId
      */
     public void countAck(int senderId) {
+        if (!processAlive[senderId]) {
+            aliveProcessNum++;
+            processAlive[senderId] = true;
+        }
         ackNum++;
         hasRespond[senderId] = true;
         if (!ackStats[senderId]) {
@@ -483,7 +518,7 @@ public class Worker {
      */
     private String aliveProcessList() {
         StringBuilder sb = new StringBuilder();
-        for (int i = 1; i < processAlive.length; i++) {
+        for (int i = 1; i <= totalProcess; i++) {
             if (processAlive[i]) {
                 sb.append(i);
                 sb.append(",");
@@ -535,7 +570,6 @@ public class Worker {
     public void voteAddCoordinator(String songName, String URL) {
         currentState = STATE_START;
         logWrite(STATE_START);
-        logWrite(PREFIX_PROCNUM+totalProcess);
         if (playlist.containsKey(songName) || rejectNextChange) {
             logWrite(PREFIX_COMMAND+"# "+currentCommand);
             performAbort();
@@ -575,7 +609,6 @@ public class Worker {
     public void voteRmCoordinator(String songName) {
         currentState = STATE_START;
         logWrite(STATE_START);
-        logWrite(PREFIX_PROCNUM+totalProcess);
         if (playlist.containsKey(songName) && !rejectNextChange) {
             currentState = STATE_WAITVOTE;
             broadcastMsgs("vr rm "+songName+" "+aliveProcessList());
@@ -615,7 +648,6 @@ public class Worker {
     public void voteEditCoordinator(String songName, String newSongName, String URL) {
         currentState = STATE_START;
         logWrite(STATE_START);
-        logWrite(PREFIX_PROCNUM+totalProcess);
         if (playlist.containsKey(songName) && !playlist.containsKey(newSongName) && !rejectNextChange) {
             currentState = STATE_WAITVOTE;
             broadcastMsgs("vr e "+songName+" "+newSongName+" "+URL+" "+aliveProcessList());
