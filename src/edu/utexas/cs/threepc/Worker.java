@@ -83,20 +83,7 @@ public class Worker {
         reBuild = rebuild;
 
         currentCommand = "";
-
-        voteStats = new Boolean[this.totalProcess+1];
-        Arrays.fill(voteStats, false);
-        voteNum = 0;
-        ackStats = new Boolean[this.totalProcess+1];
-        Arrays.fill(ackStats, false);
-        ackNum = 0;
-        hasRespond = new Boolean[this.totalProcess+1];
-        Arrays.fill(hasRespond, false);
         rejectNextChange = false;
-        stateReqAckNum = 0;
-        stateReqAck = new Boolean[this.totalProcess+1];
-        Arrays.fill(stateReqAck, false);
-
         currentState = STATE_WAIT;
 
         playlist = new HashMap<String, String>();
@@ -182,22 +169,35 @@ public class Worker {
 
         if (totalProcess > 0) {
             logWrite(PREFIX_PROCNUM+totalProcess);
-            processAlive = new Boolean[this.totalProcess + 1];
-            Arrays.fill(processAlive, true);
-            aliveProcessNum = this.totalProcess;
+            initializeArrays();
         }
 
         // Send STATE_REQ
-        if (rebuild == 0 && processId != leader || rebuild == 1) {
-            if (rebuild == 0) {
+        if (rebuild == 0 && processId != leader) {
                 unicastMsgs(leader, "sr");
-            }
-            else {
-                Arrays.fill(processAlive, false);
-                broadcastMsgs("sr");
-                timer.start();
-            }
         }
+        else if (rebuild == 1) {
+            Arrays.fill(processAlive, false);
+            broadcastToAll("sr");
+            timer.start();
+        }
+    }
+
+    private void initializeArrays() {
+        processAlive = new Boolean[totalProcess+1];
+        Arrays.fill(processAlive, true);
+        aliveProcessNum = totalProcess;
+        voteStats = new Boolean[totalProcess+1];
+        Arrays.fill(voteStats, false);
+        voteNum = 0;
+        ackStats = new Boolean[totalProcess+1];
+        Arrays.fill(ackStats, false);
+        ackNum = 0;
+        hasRespond = new Boolean[totalProcess+1];
+        Arrays.fill(hasRespond, false);
+        stateReqAckNum = 0;
+        stateReqAck = new Boolean[totalProcess+1];
+        Arrays.fill(stateReqAck, false);
     }
 
     public void processRecovery(String message) {
@@ -212,6 +212,7 @@ public class Worker {
         else if (message.startsWith(PREFIX_PROCNUM)) {
             totalProcess = Integer.parseInt(splits[1]);
             terminalLog("total number of processes is "+totalProcess);
+            initializeArrays();
         }
         else if (!message.startsWith(STATE_RECOVER)){
             // TODO: I think recovery is not fully implemented.
@@ -246,6 +247,10 @@ public class Worker {
         String[] splits = message.split(" ");
 
         int senderId = Integer.parseInt(splits[0]);
+        if (!processAlive[senderId]) {
+            processAlive[senderId] = true;
+            aliveProcessNum++;
+        }
         switch (splits[1]) {
             case "vr":
                 currentCommand = message;
@@ -363,10 +368,10 @@ public class Worker {
         if (reBuild == 0) { // initial
             updateProcessList(aliveList);
             logWrite(PREFIX_PROCNUM+totalProcessNum);
-            totalProcess = totalProcessNum;
-            processAlive = new Boolean[this.totalProcess + 1];
-            Arrays.fill(processAlive, true);
-            aliveProcessNum = this.totalProcess;
+            if (totalProcess == 0) {
+                totalProcess = totalProcessNum;
+                initializeArrays();
+            }
         }
         else {              // ask for help or recover
             stateReqAckNum++;
@@ -538,29 +543,29 @@ public class Worker {
         Arrays.fill(processAlive, false);
         for (int i = 0; i < newSplits.length; i++)
             processAlive[Integer.parseInt(newSplits[i])] = true;
-        logWrite(PREFIX_ALIVEPROC+aliveProcessList());
+        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
     }
 
     public void setProcessAlive(String processStr) {
         int processId = Integer.parseInt(processStr);
         processAlive[processId] = true;
-        logWrite(PREFIX_ALIVEPROC+aliveProcessList());
+        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
     }
 
     public void setProcessAlive(int processId) {
         processAlive[processId] = true;
-        logWrite(PREFIX_ALIVEPROC+aliveProcessList());
+        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
     }
 
     public void setProcessDead(String processStr) {
         int processId = Integer.parseInt(processStr);
         processAlive[processId] = false;
-        logWrite(PREFIX_ALIVEPROC+aliveProcessList());
+        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
     }
 
     public void setProcessDead(int processId) {
         processAlive[processId] = false;
-        logWrite(PREFIX_ALIVEPROC+aliveProcessList());
+        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
     }
 
     /**
@@ -713,6 +718,18 @@ public class Worker {
     private void broadcastMsgs(String instruction) {
         for (int i = 1; i <= totalProcess; i++)
             if (i != processId && processAlive[i]) {
+                unicastMsgs(i, instruction);
+                System.out.println(String.format("[%s#%d] asks #%d to respond to \"%s\"", processId==leader?"COORDINATOR":"PARTICIPANT", processId, i, instruction));
+            }
+    }
+
+    /**
+     * Broadcast to all partners no matter they are alive or dead
+     * @param instruction
+     */
+    private void broadcastToAll(String instruction) {
+        for (int i = 1; i <= totalProcess; i++)
+            if (i != processId) {
                 unicastMsgs(i, instruction);
                 System.out.println(String.format("[%s#%d] asks #%d to respond to \"%s\"", processId==leader?"COORDINATOR":"PARTICIPANT", processId, i, instruction));
             }
