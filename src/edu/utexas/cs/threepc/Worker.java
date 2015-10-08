@@ -44,6 +44,7 @@ public class Worker {
     private int msgCounter;
     private boolean countingMsg;
     private int msgAllowed;
+    private int instanceNum;
 
     public static final String PREFIX_COMMAND    = "COMMAND:";
     public static final String PREFIX_ALIVEPROC  = "ALIVEPROC:";
@@ -87,6 +88,7 @@ public class Worker {
         this.basePort = basePort;
         this.countingMsg = false;
         this.msgCounter = 0;
+        this.instanceNum = 0;
         leader = ld;
         reBuild = rebuild;
 
@@ -129,10 +131,14 @@ public class Worker {
                 // TODO: not finished for recovery
                 // Need to process the last state if it is not commit or abort.
                 if (!currentState.equals(STATE_ABORT) || !currentState.equals(STATE_COMMIT)) {
-                    // TODO: How do I know whether I have sent "yes" out
-                    // If p writes yes to log but crash before send it, c will time out on receiving vote on p and c will decide abort
-                    // If p writes yes to log sends the vote but crash immediately, c will time out on getting ack from p
-                    // c will decide commit....How to handle this problem? 
+                    // p fails before sending yes
+                    if (currentCommand.equals("vr")) {
+                        performAbort();
+                    } else if (currentCommand.equals("yes") ||
+                            currentState.equals(STATE_PRECOMMIT) ||
+                            currentState.equals(STATE_PRECOMMITED)){
+                        // TODO: ask other process for help
+                    }
                 }
                 br.close();
             }
@@ -254,12 +260,14 @@ public class Worker {
             terminalLog("total number of processes is "+totalProcess);
             initializeArrays();
         }
+        else if (splits[1].equals(STATE_START)) {
+            leader = processId;
+            instanceNum = Integer.parseInt(splits[0]);
+
+        }
         else if (!message.startsWith(STATE_RECOVER)){
             // TODO: I think recovery is not fully implemented.
             switch (message) {
-                case STATE_START:
-                    leader = processId;
-                    break;
                 case STATE_ABORT:
                     currentCommand = "";
                     currentState = message;
@@ -267,6 +275,7 @@ public class Worker {
                 case STATE_COMMIT:
                     performCommit();
                 case "yes":
+                    currentCommand = message;
                     return;
                 case "no":
                     currentCommand = "";
@@ -291,35 +300,36 @@ public class Worker {
             processAlive[senderId] = true;
             aliveProcessNum++;
         }
+        if (splits[2].equals("vr")) {
+            currentCommand = message;
+            logWrite(PREFIX_COMMAND+message);
+            currentState = STATE_VOTED;
+            String aliveProcessList = splits[splits.length-1];
+            instanceNum = Integer.parseInt(splits[1]);
+            if (totalProcess == 0) {
+                String[] aliveProcesses = aliveProcessList.split(",");
+                totalProcess = Integer.parseInt(aliveProcesses[aliveProcesses.length-1]);
+                logWrite(PREFIX_PROCNUM+totalProcess);
+            }
+            leader = senderId;
+            switch (splits[3]) {
+                case "add":
+                    updateProcessList(aliveProcessList);
+                    voteAddParticipant(splits[4]);
+                    break;
+                case "e":
+                    updateProcessList(aliveProcessList);
+                    voteEditParticipant(splits[4], splits[5]);
+                    break;
+                case "rm":
+                    updateProcessList(aliveProcessList);
+                    voteRmParticipant(splits[4]);
+                    break;
+                default:
+                    terminalLog("receives wrong command");
+            }
+        }
         switch (splits[1]) {
-            case "vr":
-                currentCommand = message;
-                logWrite(PREFIX_COMMAND+message);
-                currentState = STATE_VOTED;
-                String aliveProcessList = splits[splits.length-1];
-                if (totalProcess == 0) {
-                    String[] aliveProcesses = aliveProcessList.split(",");
-                    totalProcess = Integer.parseInt(aliveProcesses[aliveProcesses.length-1]);
-                    logWrite(PREFIX_PROCNUM+totalProcess);
-                }
-                leader = senderId;
-                switch (splits[2]) {
-                    case "add":
-                        updateProcessList(aliveProcessList);
-                        voteAddParticipant(splits[3]);
-                        break;
-                    case "e":
-                        updateProcessList(aliveProcessList);
-                        voteEditParticipant(splits[3], splits[4]);
-                        break;
-                    case "rm":
-                        updateProcessList(aliveProcessList);
-                        voteRmParticipant(splits[3]);
-                        break;
-                    default:
-                        terminalLog("receives wrong command");
-                }
-                break;
             case "v":
                 countVote(senderId, splits[2]);
                 break;
@@ -665,13 +675,14 @@ public class Worker {
      */
     public void voteAddCoordinator(String songName, String URL) {
         currentState = STATE_START;
-        logWrite(STATE_START);
+        instanceNum ++;
+        logWrite(instanceNum+" "+STATE_START);
         if (playlist.containsKey(songName) || rejectNextChange) {
             logWrite(PREFIX_COMMAND+"# "+currentCommand);
             performAbort();
         } else {
             currentState = STATE_WAITVOTE;
-            broadcastMsgs("vr add "+songName+" "+URL+" "+aliveProcessList());
+            broadcastMsgs(instanceNum+" vr add "+songName+" "+URL+" "+aliveProcessList());
             waitVote();
         }
         rejectNextChange = false;
