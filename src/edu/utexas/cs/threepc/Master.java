@@ -189,20 +189,10 @@ public class Master {
 
     public void partialMessage(final int processId, int numMessages) {
         netController.sendMsg(processId, "0 pm "+numMessages);
-        new Thread(new Runnable() {
-            public void run() {
-                try {
-                    processList.get(processId).waitFor();
-                } catch (InterruptedException e) {
-
-                }
-                processList.set(processId, null);
-            }
-        }).start();
     }
 
     public void resumeMessages (int processId) {
-        revive(processId);
+        netController.sendMsg(processId, "0 resumeM");
     }
 
     public void allClear() {

@@ -43,6 +43,8 @@ public class Worker {
     private boolean countingMsg;
     private int msgAllowed;
     private int instanceNum;
+    private boolean canSendMsg;
+    private Queue<PendingMsg> pending;
 
     public static final String PREFIX_COMMAND    = "COMMAND:";
     public static final String PREFIX_ALIVEPROC  = "ALIVEPROC:";
@@ -89,6 +91,7 @@ public class Worker {
         this.instanceNum = 0;
         leader = ld;
         reBuild = rebuild;
+        pending = new LinkedList<PendingMsg>();
 
         currentCommand = "";
         rejectNextChange = false;
@@ -204,7 +207,7 @@ public class Worker {
 
         // Send STATE_REQ
         if (rebuild == 0 && processId != leader) {
-                unicastMsgs(leader, "sr");
+            unicastMsgs(leader, "sr");
         }
         else if (rebuild == 1) {
             stateReqAckNum = 0;
@@ -350,11 +353,23 @@ public class Worker {
             case "pm": // partial message
                 msgCounter = 0;
                 countingMsg = true;
-
+                msgAllowed = Integer.parseInt(splits[2]);
+                break;
+            case "resumeM": // resume message
+                msgCounter = 0;
+                countingMsg = false;
+                resendPartialMsg();
                 break;
             default:
                 terminalLog("cannot recognize this command: " + splits[0]);
                 break;
+        }
+    }
+
+    private void resendPartialMsg() {
+        while (!pending.isEmpty()) {
+            PendingMsg pm = pending.remove();
+            unicastMsgs(pm.dest, pm.msg);
         }
     }
 
@@ -578,7 +593,7 @@ public class Worker {
         if (countingMsg) {
             this.msgCounter++;
             if (msgCounter == msgAllowed) {
-                System.exit(0);
+                canSendMsg = false;
             }
         }
     }
@@ -606,10 +621,18 @@ public class Worker {
     public void voteAddParticipant(String songName) {
         if (playlist.containsKey(songName) || rejectNextChange) {
             performAbort();
-            netController.sendMsg(leader, String.format("%d v no", processId));
+            String msg = String.format("%d v no", processId);
+            if (canSendMsg)
+                netController.sendMsg(leader, msg);
+            else
+                pending.add(new PendingMsg(leader, msg));
         } else {
             logWrite(PREFIX_VOTE + "YES");
-            netController.sendMsg(leader, String.format("%d v yes", processId));
+            String msg = String.format("%d v yes", processId);
+            if (canSendMsg)
+                netController.sendMsg(leader, msg);
+            else
+                pending.add(new PendingMsg(leader, msg));
         }
         rejectNextChange = false;
         checkPartialMsg();
@@ -646,10 +669,18 @@ public class Worker {
     public void voteRmParticipant(String songName) {
         if (playlist.containsKey(songName) && !rejectNextChange) {
             logWrite(PREFIX_VOTE+"YES");
-            netController.sendMsg(leader, String.format("%d v yes", processId));
+            String msg = String.format("%d v yes", processId);
+            if (canSendMsg)
+                netController.sendMsg(leader, msg);
+            else
+                pending.add(new PendingMsg(leader, msg));
         } else {
             performAbort();
-            netController.sendMsg(leader, String.format("%d v no", processId));
+            String msg = String.format("%d v no", processId);
+            if (canSendMsg)
+                netController.sendMsg(leader, msg);
+            else
+                pending.add(new PendingMsg(leader, msg));
         }
         rejectNextChange = false;
         checkPartialMsg();
@@ -686,10 +717,18 @@ public class Worker {
     public void voteEditParticipant(String songName, String newSongName) {
         if (playlist.containsKey(songName) && !playlist.containsKey(newSongName) && !rejectNextChange) {
             logWrite(PREFIX_VOTE+"YES");
-            netController.sendMsg(leader, String.format("%d v yes", processId));
+            String msg = String.format("%d v yes", processId);
+            if (canSendMsg)
+                netController.sendMsg(leader, msg);
+            else
+                pending.add(new PendingMsg(leader, msg));
         } else {
             performAbort();
-            netController.sendMsg(leader, String.format("%d v no", processId));
+            String msg = String.format("%d v no", processId);
+            if (canSendMsg)
+                netController.sendMsg(leader, msg);
+            else
+                pending.add(new PendingMsg(leader, msg));
         }
         rejectNextChange = false;
         checkPartialMsg();
@@ -708,7 +747,11 @@ public class Worker {
     }
 
     public void sendAcknowledge() {
-        unicastMsgs(leader, "ack");
+        if (canSendMsg)
+            unicastMsgs(leader, "ack");
+        else
+            pending.add(new PendingMsg(leader, "ack"));
+        checkPartialMsg();
     }
 
     public void buildSocket() {
@@ -727,7 +770,11 @@ public class Worker {
      * @param instruction
      */
     private void unicastMsgs(int destId, String instruction) {
-        netController.sendMsg(destId, String.format("%d %s", processId, instruction));
+        String msg = String.format("%d %s", processId, instruction);
+        if (canSendMsg)
+            netController.sendMsg(destId, msg);
+        else
+            pending.add(new PendingMsg(destId, msg));
         checkPartialMsg();
     }
 
