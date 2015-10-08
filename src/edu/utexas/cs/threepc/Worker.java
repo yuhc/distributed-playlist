@@ -213,7 +213,7 @@ public class Worker {
             stateReqAckNum = 0;
             Arrays.fill(hasRespond, false);
             Arrays.fill(stateReqList, STATE_NOTANS);
-            broadcastToAll("sr");
+            broadcastMsgs("sr");
             timer.start();
         }
     }
@@ -783,18 +783,6 @@ public class Worker {
      * @param instruction
      */
     private void broadcastMsgs(String instruction) {
-        for (int i = 1; i <= totalProcess; i++)
-            if (i != processId) {
-                unicastMsgs(i, instruction);
-                System.out.println(String.format("[%s#%d] asks #%d to respond to \"%s\"", processId==leader?"COORDINATOR":"PARTICIPANT", processId, i, instruction));
-            }
-    }
-
-    /**
-     * Broadcast to all partners no matter they are alive or dead
-     * @param instruction
-     */
-    private void broadcastToAll(String instruction) {
         for (int i = 1; i <= totalProcess; i++)
             if (i != processId) {
                 unicastMsgs(i, instruction);
