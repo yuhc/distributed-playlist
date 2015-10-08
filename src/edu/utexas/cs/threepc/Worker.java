@@ -41,6 +41,9 @@ public class Worker {
     private int    basePort;
     private int    reBuild;
     private NetController netController;
+    private int msgCounter;
+    private boolean countingMsg;
+    private int msgAllowed;
 
     public static final String PREFIX_COMMAND    = "COMMAND:";
     public static final String PREFIX_ALIVEPROC  = "ALIVEPROC:";
@@ -82,12 +85,15 @@ public class Worker {
         this.totalProcess = totalProcess;
         this.hostName = hostName;
         this.basePort = basePort;
+        this.countingMsg = false;
+        this.msgCounter = 0;
         leader = ld;
         reBuild = rebuild;
 
         currentCommand = "";
         rejectNextChange = false;
         currentState = STATE_WAIT;
+
 
         playlist = new HashMap<String, String>();
         try {
@@ -355,6 +361,11 @@ public class Worker {
             case "sa": // STATE_ACK
                 int totalProcessNum = Integer.parseInt(splits[2]);
                 countStateAck(senderId, totalProcessNum, splits[3], splits[4]);
+                break;
+            case "pm": // partial message
+                msgCounter = 0;
+                countingMsg = true;
+
                 break;
             default:
                 terminalLog("cannot recognize this command: " + splits[0]);
@@ -638,6 +649,15 @@ public class Worker {
         //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
     }
 
+    private void checkPartialMsg() {
+        if (countingMsg) {
+            this.msgCounter++;
+            if (msgCounter == msgAllowed) {
+                System.exit(0);
+            }
+        }
+    }
+
     /**
      * Respond to VOTE_REQ
      * @param songName
@@ -662,10 +682,11 @@ public class Worker {
             performAbort();
             netController.sendMsg(leader, String.format("%d v no", processId));
         } else {
-            logWrite(PREFIX_VOTE+"YES");
+            logWrite(PREFIX_VOTE + "YES");
             netController.sendMsg(leader, String.format("%d v yes", processId));
         }
         rejectNextChange = false;
+        checkPartialMsg();
     }
 
     /**
@@ -705,6 +726,7 @@ public class Worker {
             netController.sendMsg(leader, String.format("%d v no", processId));
         }
         rejectNextChange = false;
+        checkPartialMsg();
     }
 
     /**
@@ -744,6 +766,7 @@ public class Worker {
             netController.sendMsg(leader, String.format("%d v no", processId));
         }
         rejectNextChange = false;
+        checkPartialMsg();
     }
 
     /**
@@ -779,6 +802,7 @@ public class Worker {
      */
     private void unicastMsgs(int destId, String instruction) {
         netController.sendMsg(destId, String.format("%d %s", processId, instruction));
+        checkPartialMsg();
     }
 
     /**
