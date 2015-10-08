@@ -125,6 +125,7 @@ public class Worker {
                             currentState.equals(STATE_PRECOMMIT) ||
                             currentState.equals(STATE_PRECOMMITED)){
                         // TODO: ask other process for help
+                        broadcastMsgs("sr");
                     }
                 }
                 br.close();
