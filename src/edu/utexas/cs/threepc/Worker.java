@@ -33,6 +33,7 @@ public class Worker {
     private Boolean[] hasRespond;
     private Boolean   rejectNextChange;
     private Boolean[] stateReqAck;
+    private String[]  stateReqList;
     private int       stateReqAckNum;
 
     private String hostName;
@@ -55,11 +56,13 @@ public class Worker {
     /* PARTICIPANT */
     public static final String STATE_VOTED       = "VOTED";
     public static final String STATE_PRECOMMIT   = "PRECOMMIT";
+    public static final String STATE_STREQ       = "STATE_REQ";
     /* BOTH */
     public static final String STATE_WAIT        = "WAIT";
     public static final String STATE_RECOVER     = "RECOVER";
     public static final String STATE_COMMIT      = "COMMIT";
     public static final String STATE_ABORT       = "ABORT";
+    public static final String STATE_NOTANS      = "NOTANS";
 
     private Timer timer;
     public static final int    TIME_OUT        = 3000;
@@ -137,6 +140,7 @@ public class Worker {
         timer = new Timer(TIME_OUT, new ActionListener() {
             public void actionPerformed(ActionEvent arg0) {
                 switch (currentState) {
+                    // Coordinator waits for VOTE
                     case STATE_WAITVOTE:
                         for (int i = 1; i <= totalProcess; i++)
                             if (i != processId && processAlive[i] && !hasRespond[i]) {
@@ -146,6 +150,7 @@ public class Worker {
                             }
                         performAbort();
                         break;
+                    // Coordinator waits for ACK
                     case STATE_WAITACK:
                         for (int i = 1; i <= totalProcess; i++)
                             if (i != processId && processAlive[i] && !hasRespond[i]) {
@@ -159,6 +164,29 @@ public class Worker {
                                 unicastMsgs(i, "c");
                         currentCommand = "# " + currentCommand; // format the command
                         performCommit();
+                        break;
+                    // Participant waits for PRECOMMIT
+                    case STATE_VOTED:
+                        processAlive[leader] = false;
+                        aliveProcessNum--;
+                        stateReqAckNum = 0;
+                        Arrays.fill(hasRespond, false);
+                        Arrays.fill(stateReqList, STATE_NOTANS);
+                        broadcastMsgs("sr");
+                        timer.start();
+                        break;
+                    // Participant waits for STATE_REQ ACK
+                    case STATE_STREQ:
+                        for (int i = 1; i < totalProcess; i++)
+                            if (i != processId && processAlive[i] && !hasRespond[i]) {
+                                terminalLog(String.format("participant %d times out", i));
+                                processAlive[i] = false;
+                                aliveProcessNum--;
+                            }
+                        if (currentState == STATE_VOTED) {
+                            performAbort();
+                            broadcastMsgs("abt");
+                        }
                         break;
                     default: // TODO: Termination protocol here?
                         break;
@@ -177,7 +205,11 @@ public class Worker {
                 unicastMsgs(leader, "sr");
         }
         else if (rebuild == 1) {
-            Arrays.fill(processAlive, false);
+            Arrays.fill(processAlive, true);
+            aliveProcessNum = totalProcess;
+            stateReqAckNum = 0;
+            Arrays.fill(hasRespond, false);
+            Arrays.fill(stateReqList, STATE_NOTANS);
             broadcastToAll("sr");
             timer.start();
         }
@@ -198,6 +230,8 @@ public class Worker {
         stateReqAckNum = 0;
         stateReqAck = new Boolean[totalProcess+1];
         Arrays.fill(stateReqAck, false);
+        stateReqList = new String[totalProcess+1];
+        Arrays.fill(stateReqList, STATE_NOTANS);
     }
 
     public void processRecovery(String message) {
@@ -375,8 +409,44 @@ public class Worker {
         }
         else {              // ask for help or recover
             stateReqAckNum++;
-            processAlive[senderId] = true;
-
+            hasRespond[senderId] = true;
+            stateReqList[senderId] = state;
+            if (stateReqAckNum == aliveProcessNum-1) {
+                timer.stop();
+                if (currentState == STATE_VOTED || currentState == STATE_PRECOMMIT) {
+                    Boolean sendRecommit = false;
+                    for (int i = 1; i <= totalProcess; i++) {
+                        if (stateReqList[i] == STATE_PRECOMMIT) {
+                            currentState = STATE_PRECOMMIT;
+                            sendRecommit = true;
+                            for (int j = 1; j <= totalProcess; j++)
+                                if (stateReqList[j] != STATE_PRECOMMIT)
+                                    unicastMsgs(j, "rc");
+                        }
+                    }
+                    if (!sendRecommit) {
+                        performAbort();
+                        broadcastMsgs("abt");
+                    }
+                }
+            }
+            switch (currentState) {
+                case STATE_ABORT:
+                    break;
+                case STATE_VOTED:
+                case STATE_PRECOMMIT:
+                    if (state == STATE_ABORT) {
+                        performAbort();
+                        broadcastMsgs("abt");
+                    }
+                    else if (state == STATE_COMMIT) {
+                        performCommit();
+                        broadcastMsgs("c");
+                    }
+                    break;
+                default:
+                    break;
+            }
         }
     }
 
