@@ -273,7 +273,7 @@ public class Worker {
                 case STATE_PRECOMMIT:
                 case STATE_ACKED:
                     currentState = message;
-                    return;
+                    break;
                 default:
                     terminalLog("unrecognized command in recovery log: " + message);
             }
