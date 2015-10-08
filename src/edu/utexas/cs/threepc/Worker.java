@@ -100,20 +100,6 @@ public class Worker {
 
         playlist = new HashMap<String, String>();
         try {
-            File playlistInit = new File("../data/playlist_init_"+processId+".txt");
-            if (playlistInit.exists()) {
-                BufferedReader br = new BufferedReader(new FileReader(playlistInit));
-                String line;
-                while((line = br.readLine()) != null) {
-                    String[] splits = line.split("==>");
-                    if (splits.length != 2) break;
-                    splits[0] = splits[0].trim();
-                    splits[1] = splits[1].trim();
-                    playlist.put(splits[0], splits[1]);
-                    terminalLog(String.format("<%s, %s> is imported", splits[0], splits[1]));
-                }
-                br.close();
-            }
             DTLog = new File("../log/dt_" + processId + ".log");
             if (!DTLog.exists() || reBuild == 0) {
                 DTLog.getParentFile().mkdirs();
