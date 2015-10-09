@@ -18,7 +18,6 @@ public class Worker {
     private int  leader;
     private int  viewNumber;
     private File DTLog;
-    private int  messageCounter;
     private Map<String, String> playlist;
 
     private String currentCommand;
@@ -35,19 +34,16 @@ public class Worker {
     private int       stateReqAckNum;
 
     private String hostName;
-    private String lastCommandInLog;
     private int    basePort;
     private int    reBuild;
     private NetController netController;
     private int msgCounter;
-    private boolean countingMsg;
     private int msgAllowed;
-    private int instanceNum;
+    private boolean countingMsg;
     private boolean canSendMsg;
-    private Queue<PendingMsg> pending;
+    private int instanceNum;
 
     public static final String PREFIX_COMMAND    = "COMMAND:";
-    public static final String PREFIX_ALIVEPROC  = "ALIVEPROC:";
     public static final String PREFIX_PROCNUM    = "PROCNUM:";
     public static final String PREFIX_VOTE       = "VOTE:";
 
@@ -89,9 +85,9 @@ public class Worker {
         this.countingMsg = false;
         this.msgCounter = 0;
         this.instanceNum = 0;
+        this.canSendMsg = true;
         leader = ld;
         reBuild = rebuild;
-        pending = new LinkedList<PendingMsg>();
 
         currentCommand = "";
         rejectNextChange = false;
@@ -175,7 +171,7 @@ public class Worker {
                             if (i != processId && !hasRespond[i]) {
                                 terminalLog(String.format("participant %d times out", i));
                             }
-                        if (currentState == STATE_VOTED) {
+                        if (currentState.equals(STATE_VOTED)) {
                             performAbort();
                             broadcastMsgs("abt");
                         }
@@ -335,28 +331,16 @@ public class Worker {
                 break;
             case "sa": // STATE_ACK
                 int totalProcessNum = Integer.parseInt(splits[2]);
-                countStateAck(senderId, totalProcessNum, splits[3], splits[4]);
+                countStateAck(senderId, totalProcessNum, splits[3]);
                 break;
             case "pm": // partial message
                 msgCounter = 0;
                 countingMsg = true;
                 msgAllowed = Integer.parseInt(splits[2]);
                 break;
-            case "resumeM": // resume message
-                msgCounter = 0;
-                countingMsg = false;
-                resendPartialMsg();
-                break;
             default:
                 terminalLog("cannot recognize this command: " + splits[0]);
                 break;
-        }
-    }
-
-    private void resendPartialMsg() {
-        while (!pending.isEmpty()) {
-            PendingMsg pm = pending.remove();
-            unicastMsgs(pm.dest, pm.msg);
         }
     }
 
@@ -396,7 +380,7 @@ public class Worker {
         }
     }
 
-    public void countStateAck(int senderId, int totalProcessNum, String state, String aliveList) {
+    public void countStateAck(int senderId, int totalProcessNum, String state) {
         if (reBuild == 0) { // initial
             logWrite(PREFIX_PROCNUM+totalProcessNum);
             if (totalProcess == 0) {
@@ -410,14 +394,14 @@ public class Worker {
             stateReqList[senderId] = state;
             if (stateReqAckNum == totalProcess-1) {
                 timer.stop();
-                if (currentState == STATE_VOTED || currentState == STATE_PRECOMMIT) {
+                if (currentState.equals(STATE_VOTED) || currentState.equals(STATE_PRECOMMIT)) {
                     Boolean sendRecommit = false;
                     for (int i = 1; i <= totalProcess; i++) {
-                        if (stateReqList[i] == STATE_PRECOMMIT) {
+                        if (stateReqList[i].equals(STATE_PRECOMMIT)) {
                             currentState = STATE_PRECOMMIT;
                             sendRecommit = true;
                             for (int j = 1; j <= totalProcess; j++)
-                                if (stateReqList[j] != STATE_PRECOMMIT)
+                                if (!stateReqList[j].equals(STATE_PRECOMMIT))
                                     unicastMsgs(j, "rc");
                         }
                     }
@@ -432,11 +416,11 @@ public class Worker {
                     break;
                 case STATE_VOTED:
                 case STATE_PRECOMMIT:
-                    if (state == STATE_ABORT) {
+                    if (state.equals(STATE_ABORT)) {
                         performAbort();
                         broadcastMsgs("abt");
                     }
-                    else if (state == STATE_COMMIT) {
+                    else if (state.equals(STATE_COMMIT)) {
                         performCommit();
                         broadcastMsgs("c");
                     }
@@ -469,7 +453,7 @@ public class Worker {
         hasRespond[senderId] = true;
         if (vote.equals("no")) {
             decision = 0;
-            if (voteNum == totalProcess-1 && decision == 0) {
+            if (voteNum == totalProcess-1) {
                 timer.stop();
                 performAbort();
             }
@@ -580,7 +564,7 @@ public class Worker {
         if (countingMsg) {
             this.msgCounter++;
             if (msgCounter == msgAllowed) {
-                canSendMsg = false;
+                System.exit(0);
             }
         }
     }
@@ -611,15 +595,11 @@ public class Worker {
             String msg = String.format("%d v no", processId);
             if (canSendMsg)
                 netController.sendMsg(leader, msg);
-            else
-                pending.add(new PendingMsg(leader, msg));
         } else {
             logWrite(PREFIX_VOTE + "YES");
             String msg = String.format("%d v yes", processId);
             if (canSendMsg)
                 netController.sendMsg(leader, msg);
-            else
-                pending.add(new PendingMsg(leader, msg));
         }
         rejectNextChange = false;
         checkPartialMsg();
@@ -659,15 +639,11 @@ public class Worker {
             String msg = String.format("%d v yes", processId);
             if (canSendMsg)
                 netController.sendMsg(leader, msg);
-            else
-                pending.add(new PendingMsg(leader, msg));
         } else {
             performAbort();
             String msg = String.format("%d v no", processId);
             if (canSendMsg)
                 netController.sendMsg(leader, msg);
-            else
-                pending.add(new PendingMsg(leader, msg));
         }
         rejectNextChange = false;
         checkPartialMsg();
@@ -707,15 +683,11 @@ public class Worker {
             String msg = String.format("%d v yes", processId);
             if (canSendMsg)
                 netController.sendMsg(leader, msg);
-            else
-                pending.add(new PendingMsg(leader, msg));
         } else {
             performAbort();
             String msg = String.format("%d v no", processId);
             if (canSendMsg)
                 netController.sendMsg(leader, msg);
-            else
-                pending.add(new PendingMsg(leader, msg));
         }
         rejectNextChange = false;
         checkPartialMsg();
@@ -736,8 +708,6 @@ public class Worker {
     public void sendAcknowledge() {
         if (canSendMsg)
             unicastMsgs(leader, "ack");
-        else
-            pending.add(new PendingMsg(leader, "ack"));
         checkPartialMsg();
     }
 
@@ -760,8 +730,6 @@ public class Worker {
         String msg = String.format("%d %s", processId, instruction);
         if (canSendMsg)
             netController.sendMsg(destId, msg);
-        else
-            pending.add(new PendingMsg(destId, msg));
         checkPartialMsg();
     }
 
