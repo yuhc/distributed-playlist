@@ -6,6 +6,7 @@ import javax.swing.Timer;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
+import java.lang.reflect.Array;
 import java.util.*;
 
 /**
@@ -15,13 +16,15 @@ public class Worker {
 
     private int  processId;
     private int  totalProcess;
-    private int  leader;
-    private int  viewNumber;
+    private int  leader, oldLeader;
     private File DTLog;
     private Map<String, String> playlist;
 
     private String currentCommand;
     private String currentState;
+
+    private int       viewNumber;
+    private Boolean[] processAlive;
 
     private Boolean[] voteStats;
     private int       voteNum;
@@ -30,7 +33,6 @@ public class Worker {
     private Boolean[] hasRespond;
     private Boolean   rejectNextChange;
     private Boolean[] stateReqAck;
-    private Boolean[] processAlive;
     private String[]  stateReqList;
     private int       stateReqAckNum;
 
@@ -58,6 +60,7 @@ public class Worker {
     public static final String STATE_VOTED       = "VOTED";
     public static final String STATE_PRECOMMIT   = "PRECOMMIT";
     public static final String STATE_STREQ       = "STATE_REQ";
+    public static final String STATE_SELETC      = "SELECT_COORDINATOR";
     /* BOTH */
     public static final String STATE_WAIT        = "WAIT";
     public static final String STATE_RECOVER     = "RECOVER";
@@ -88,6 +91,7 @@ public class Worker {
         this.instanceNum = 0;
         this.canSendMsg = true;
         leader = ld;
+        oldLeader = -1;
         reBuild = rebuild;
 
         currentCommand = "";
@@ -104,7 +108,7 @@ public class Worker {
                 DTLog.createNewFile();
             } else {
                 // Read recovery log and try to reconstruct the state
-                terminalLog("I'm recovering");
+                terminalLog("starts recovering");
                 currentState = STATE_RECOVER;
                 BufferedReader br = new BufferedReader(new FileReader(DTLog));
                 String line;
@@ -177,6 +181,11 @@ public class Worker {
                             broadcastMsgs("abt");
                         }
                         break;
+                    // Wait STATE_REQ from new coordinator
+                    case STATE_SELETC:
+                        processAlive[viewNumber] = false;
+                        electCoordinator();
+                        break;
                     default: // TODO: Termination protocol here?
                         break;
                 }
@@ -191,7 +200,7 @@ public class Worker {
 
         // Send STATE_REQ
         if (rebuild == 0 && processId != leader) {
-            unicastMsgs(leader, "sr");
+            unicastMsgs(leader, "ir");
         }
         else if (rebuild == 1) {
             stateReqAckNum = 0;
@@ -274,25 +283,27 @@ public class Worker {
             currentCommand = message;
             logWrite(PREFIX_COMMAND+message);
             currentState = STATE_VOTED;
-            String aliveProcessList = splits[splits.length-1];
+
+            String processAliveList = splits[splits.length-1];
             instanceNum = Integer.parseInt(splits[1]);
             if (totalProcess == 0) {
-                String[] aliveProcesses = aliveProcessList.split(",");
-                totalProcess = Integer.parseInt(aliveProcesses[aliveProcesses.length-1]);
+                String[] processAlivees = processAliveList.split(",");
+                totalProcess = Integer.parseInt(processAlivees[processAlivees.length-1]);
                 logWrite(PREFIX_PROCNUM+totalProcess);
             }
             leader = senderId;
             switch (splits[3]) {
                 case "add":
-                    updateProcessList(aliveProcessList);
+
+                    updateProcessList(processAliveList);
                     voteAddParticipant(splits[4]);
                     break;
                 case "e":
-                    updateProcessList(aliveProcessList);
+                    updateProcessList(processAliveList);
                     voteEditParticipant(splits[4], splits[5]);
                     break;
                 case "rm":
-                    updateProcessList(aliveProcessList);
+                    updateProcessList(processAliveList);
                     voteRmParticipant(splits[4]);
                     break;
                 default:
@@ -333,14 +344,31 @@ public class Worker {
                 voteRmCoordinator(splits[2]);
                 break;
             case "pl":
-            	printPlayList();
-            	break;
+                printPlayList();
+                break;
+            case "ir": // INITIAL_REQUEST
+                unicastMsgs(senderId, "ia "+totalProcess);
+                break;
+            case "ia": // INITIAL_REQ_ACK
+                int totalProcessNum = Integer.parseInt(splits[2]);
+                initialRequest(totalProcessNum);
+                break;
+            case "ue": // UR_ELECTED
+                if (leader != processId) oldLeader = leader;
+                leader = processId;
+                termination();
+                break;
             case "sr": // STATE_REQ
-                unicastMsgs(senderId, "sa "+totalProcess+" "+currentState);
+                if (senderId == oldLeader) break;
+                timer.stop();
+                for (int i = 1; i < senderId; i++)
+                    processAlive[i] = false;
+                oldLeader = leader;
+                leader = senderId;
+                unicastMsgs(senderId, "sa "+currentState);
                 break;
             case "sa": // STATE_ACK
-                int totalProcessNum = Integer.parseInt(splits[2]);
-                countStateAck(senderId, totalProcessNum, splits[3], splits[4]);
+                countStateAck(senderId, splits[2]);
                 break;
             case "pm": // partial message
                 msgCounter = 0;
@@ -388,56 +416,84 @@ public class Worker {
             e.printStackTrace();
         }
     }
+    
+    public void initialRequest(int totalProcessNum) {
+        logWrite(PREFIX_PROCNUM + totalProcessNum);
+        totalProcess = totalProcessNum;
+        initializeArrays();
+    }
 
-    public void countStateAck(int senderId, int totalProcessNum, String state, String aliveList) {
-        if (reBuild == 0) { // initial
-            updateProcessList(aliveList);
-            logWrite(PREFIX_PROCNUM+totalProcessNum);
-            if (totalProcess == 0) {
-                totalProcess = totalProcessNum;
-                initializeArrays();
-            }
-        }
-        else {              // ask for help or recover
-            stateReqAckNum++;
-            hasRespond[senderId] = true;
-            stateReqList[senderId] = state;
-            if (stateReqAckNum == totalProcess-1) {
-                timer.stop();
-                if (currentState.equals(STATE_VOTED) || currentState.equals(STATE_PRECOMMIT)) {
-                    Boolean sendRecommit = false;
-                    for (int i = 1; i <= totalProcess; i++) {
-                        if (stateReqList[i].equals(STATE_PRECOMMIT)) {
-                            currentState = STATE_PRECOMMIT;
-                            sendRecommit = true;
-                            for (int j = 1; j <= totalProcess; j++)
-                                if (!stateReqList[j].equals(STATE_PRECOMMIT))
-                                    unicastMsgs(j, "rc");
-                        }
-                    }
-                    if (!sendRecommit) {
-                        performAbort();
-                        broadcastMsgs("abt");
-                    }
+
+    /**
+     * Termination Protocol
+     * Deal with ACK of STATE_REQ
+     * @param senderId
+     * @param state
+     */
+    public void countStateAck(int senderId, String state) {
+        stateReqAckNum++;
+        hasRespond[senderId] = true;
+        stateReqList[senderId] = state;
+        if (stateReqAckNum == totalProcess - 1) {
+            timer.stop();
+            // TR1
+            for (int i = 1; i <= totalProcess; i++)
+                if (stateReqList[i] == STATE_ABORT) {
+                    performAbort();
+                    for (int j = 1; j <= totalProcess; j++)
+                        if (stateReqList[j] != STATE_ABORT)
+                            unicastMsgs(j, "abt");
+                    return;
                 }
-            }
-            switch (currentState) {
-                case STATE_ABORT:
-                    break;
-                case STATE_VOTED:
-                case STATE_PRECOMMIT:
-                    if (state.equals(STATE_ABORT)) {
-                        performAbort();
-                        broadcastMsgs("abt");
-                    }
-                    else if (state.equals(STATE_COMMIT)) {
-                        performCommit();
-                        broadcastMsgs("c");
-                    }
-                    break;
-                default:
-                    break;
-            }
+
+            // TR2
+            for (int i = 1; i <= totalProcess; i++)
+                if (stateReqList[i] == STATE_COMMIT) {
+                    performCommit();
+                    for (int j = 1; j <= totalProcess; j++)
+                        if (stateReqList[j] != STATE_COMMIT)
+                            unicastMsgs(j, "c");
+                    return;
+                }
+
+            // TR4
+            for (int i = 1; i <= totalProcess; i++)
+                if (stateReqList[i] == STATE_PRECOMMIT) {
+                    broadcastMsgs("pc");
+                    return;
+                }
+
+            // TR3
+            performAbort();
+            broadcastMsgs("abt");
+        }
+    }
+
+    /**
+     * Start termination protocol after electing new coordinator
+     */
+    private void termination() {
+        stateReqAckNum = 0;
+        Arrays.fill(hasRespond, false);
+        Arrays.fill(stateReqList, STATE_NOTANS);
+        broadcastMsgs("sr");
+    }
+
+    /**
+     * Elect new coordinator
+     */
+    private void electCoordinator() {
+        viewNumber = 1;
+        while (!processAlive[viewNumber]) {
+            viewNumber++;
+            if (viewNumber > totalProcess) viewNumber = 1;
+        }
+        if (viewNumber == processId)
+            broadcastMsgs("sr");
+        else {
+            currentState = STATE_SELETC;
+            unicastMsgs(viewNumber, "ue");
+            timer.start();
         }
     }
 
@@ -583,6 +639,22 @@ public class Worker {
      * Build alive process list
      * @return
      */
+    private String processAliveList() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 1; i <= totalProcess; i++) {
+            if (processAlive[i]) {
+                sb.append(i);
+                sb.append(",");
+            }
+        }
+        sb.deleteCharAt(sb.length() - 1);
+        return sb.toString();
+    }
+
+    /**
+     * Build alive process list
+     * @return
+     */
     private String aliveProcessList() {
         StringBuilder sb = new StringBuilder();
         for (int i = 1; i <= totalProcess; i++) {
@@ -639,11 +711,11 @@ public class Worker {
         instanceNum ++;
         logWrite(instanceNum+" "+STATE_START);
         if (playlist.containsKey(songName) || rejectNextChange) {
-            logWrite(PREFIX_COMMAND+"# "+currentCommand);
+            logWrite(PREFIX_COMMAND + "# " + currentCommand);
             performAbort();
         } else {
             currentState = STATE_WAITVOTE;
-            broadcastMsgs(instanceNum+" vr add "+songName+" "+URL);
+            broadcastMsgs(instanceNum + " vr add " + songName + " " + URL);
             waitVote();
         }
         rejectNextChange = false;
@@ -684,10 +756,10 @@ public class Worker {
         logWrite(STATE_START);
         if (playlist.containsKey(songName) && !rejectNextChange) {
             currentState = STATE_WAITVOTE;
-            broadcastMsgs("vr rm "+songName);
+            broadcastMsgs("vr rm " + songName);
             waitVote();
         } else {
-            logWrite(PREFIX_COMMAND+"# "+currentCommand);
+            logWrite(PREFIX_COMMAND + "# " + currentCommand);
             performAbort();
         }
         rejectNextChange = false;
@@ -728,10 +800,10 @@ public class Worker {
         logWrite(STATE_START);
         if (playlist.containsKey(songName) && !playlist.containsKey(newSongName) && !rejectNextChange) {
             currentState = STATE_WAITVOTE;
-            broadcastMsgs("vr e "+songName+" "+newSongName+" "+URL);
+            broadcastMsgs("vr e " + songName + " " + newSongName + " " + URL);
             waitVote();
         } else {
-            logWrite(PREFIX_COMMAND+"# "+currentCommand);
+            logWrite(PREFIX_COMMAND + "# " + currentCommand);
             performAbort();
         }
         rejectNextChange = false;
@@ -762,7 +834,7 @@ public class Worker {
     public void edit(String songName, String newSongName, String newSongURL) {
         remove(songName);
         add(newSongName, newSongURL);
-        terminalLog("update <"+songName+"> to <"+newSongName+", "+newSongURL+">");
+        terminalLog("update <" + songName + "> to <" + newSongName + ", " + newSongURL + ">");
     }
 
     public void sendAcknowledge() {
