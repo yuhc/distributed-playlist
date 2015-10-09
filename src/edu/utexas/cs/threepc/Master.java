@@ -189,6 +189,17 @@ public class Master {
 
     public void partialMessage(final int processId, int numMessages) {
         netController.sendMsg(processId, "0 pm "+numMessages);
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    processList.get(processId).waitFor();
+                } catch (InterruptedException e) {
+
+                }
+                System.err.println("Process " + processId + " halted");
+                processList.set(processId, null);
+            }
+        }).start();
     }
 
     public void resumeMessages (int processId) {
@@ -274,9 +285,14 @@ public class Master {
                 m.reviveAll();
                 break;
             case "pm":
-                int pauseProcessId = Integer.parseInt(splits[1]);
-                int numMessages = Integer.parseInt(splits[2]);
-                m.partialMessage(pauseProcessId, numMessages);
+                try {
+                    int pauseProcessId = Integer.parseInt(splits[1]);
+                    int numMessages = Integer.parseInt(splits[2]);
+                    m.partialMessage(pauseProcessId, numMessages);
+                }
+                catch (ArrayIndexOutOfBoundsException e) {
+                    System.err.println("Wrong parameter");
+                }
                 break;
             case "rm":
                 int resumeProcessId = Integer.parseInt(splits[1]);
