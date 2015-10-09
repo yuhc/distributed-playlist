@@ -192,7 +192,7 @@ public class Master {
     }
 
     public void resumeMessages (int processId) {
-        netController.sendMsg(processId, "0 resumeM");
+        revive(processId);
     }
 
     public void allClear() {
