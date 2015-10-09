@@ -679,28 +679,6 @@ public class Worker {
         //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
     }
 
-    public void setProcessAlive(String processStr) {
-        int processId = Integer.parseInt(processStr);
-        processAlive[processId] = true;
-        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
-    }
-
-    public void setProcessAlive(int processId) {
-        processAlive[processId] = true;
-        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
-    }
-
-    public void setProcessDead(String processStr) {
-        int processId = Integer.parseInt(processStr);
-        processAlive[processId] = false;
-        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
-    }
-
-    public void setProcessDead(int processId) {
-        processAlive[processId] = false;
-        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
-    }
-
     /**
      * Respond to VOTE_REQ
      * @param songName
