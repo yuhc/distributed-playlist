@@ -74,7 +74,7 @@ public class Worker {
     private Timer timerCoordinator;
     private Timer timerParticipant;
     public static final int    TIME_OUT        = 2500;
-    public static final int    TIME_OUT_P      = 4000;
+    public static final int    TIME_OUT_P      = 5000;
     private int   decision;
 
     /**
@@ -103,6 +103,64 @@ public class Worker {
         rejectNextChange = false;
         currentState = STATE_WAIT;
 
+        if (totalProcess > 0) setTimer();
+
+        playlist = new HashMap<String, String>();
+        isRecover = true;
+        try {
+            DTLog = new File("../log/dt_" + processId + ".log");
+            if (!DTLog.exists() || reBuild == 0) {
+                DTLog.getParentFile().mkdirs();
+                DTLog.delete();
+                DTLog.createNewFile();
+            } else {
+                // Read recovery log and try to reconstruct the state
+                terminalLog("starts recovering");
+                currentState = STATE_RECOVER;
+                BufferedReader br = new BufferedReader(new FileReader(DTLog));
+                String line;
+                lastLine = "";
+                while ((line = br.readLine()) != null) {
+                    processRecovery(line);
+                }
+
+                // Need to process the last state if it is not commit or abort.
+                // Recovery Protocol
+                if (!currentState.equals(STATE_ABORT) || !currentState.equals(STATE_COMMIT)) {
+                    // p fails before sending yes
+                    if (!currentCommand.equals("") && currentCommand.split(" ")[2].equals("vr") && currentState.equals(STATE_VOTEREQ)) {
+                        performAbort();
+                    } else if (currentState.startsWith(STATE_VOTED) ||
+                            currentState.equals(STATE_PRECOMMIT) ||
+                            currentState.equals(STATE_START)) {
+                        // TODO: ask other process for help
+                        broadcastMsgs("rr "+instanceNum+" "+currentState);
+                    }
+                }
+                br.close();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        isRecover = false;
+
+        if (rebuild == 0) {
+            buildSocket();
+            getReceivedMsgs(netController);
+        }
+
+        if (totalProcess > 0 && processId == leader && reBuild == 0) {
+            logWrite(PREFIX_PROCNUM+totalProcess);
+            initializeArrays();
+        }
+
+        // Send STATE_REQ
+        if (rebuild == 0 && processId != leader) {
+            unicastMsgs(leader, "ir");
+        }
+    }
+
+    private void setTimer() {
         timerCoordinator = new Timer(TIME_OUT, new ActionListener() {
             public void actionPerformed(ActionEvent arg0) {
                 switch (currentState) {
@@ -121,10 +179,11 @@ public class Worker {
                                 terminalLog(String.format("participant %d times out", i));
                             }
                         logWrite(STATE_ACKED);
+
                         for (int i = 1; i <= totalProcess; i++)
                             if (i != processId && hasRespond[i])
                                 unicastMsgs(i, "c");
-                        currentCommand = "# " + currentCommand; // format the command
+                        currentCommand = "# # " + currentCommand; // format the command
                         performCommit();
                         break;
                     // New coordinator waits for STATE_REQ ANS
@@ -174,71 +233,6 @@ public class Worker {
             }
         });
         timerParticipant.setRepeats(false);
-
-        playlist = new HashMap<String, String>();
-        isRecover = true;
-        try {
-            DTLog = new File("../log/dt_" + processId + ".log");
-            if (!DTLog.exists() || reBuild == 0) {
-                DTLog.getParentFile().mkdirs();
-                DTLog.delete();
-                DTLog.createNewFile();
-            } else {
-                // Read recovery log and try to reconstruct the state
-                terminalLog("starts recovering");
-                currentState = STATE_RECOVER;
-                BufferedReader br = new BufferedReader(new FileReader(DTLog));
-                String line;
-                lastLine = "";
-                while ((line = br.readLine()) != null) {
-                    processRecovery(line);
-                }
-
-                // TODO: not finished for recovery
-                // Need to process the last state if it is not commit or abort.
-                terminalLog(currentCommand + " # " + currentState + " # " + lastLine);
-
-                // Recovery Protocol
-                if (!currentState.equals(STATE_ABORT) || !currentState.equals(STATE_COMMIT)) {
-                    // p fails before sending yes
-                    terminalLog(currentCommand + " # " + currentState + " # " + lastLine);
-                    if (!currentCommand.equals("") && currentCommand.split(" ")[2].equals("vr") && currentState.equals(STATE_VOTEREQ)) {
-                        performAbort();
-                    } else if (currentState.startsWith(STATE_VOTED) ||
-                            currentState.equals(STATE_PRECOMMIT) ||
-                            currentState.equals(STATE_START)) {
-                        // TODO: ask other process for help
-                        broadcastMsgs("rr "+instanceNum);
-                    }
-                }
-                br.close();
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        isRecover = false;
-
-        if (rebuild == 0) {
-            buildSocket();
-            getReceivedMsgs(netController);
-        }
-
-        if (totalProcess > 0 && processId == leader && reBuild == 0) {
-            logWrite(PREFIX_PROCNUM+totalProcess);
-            initializeArrays();
-        }
-
-        // Send STATE_REQ
-        if (rebuild == 0 && processId != leader) {
-            unicastMsgs(leader, "ir");
-        }
-//        else if (rebuild == 1) {
-//            stateReqAckNum = 0;
-//            Arrays.fill(hasRespond, false);
-//            Arrays.fill(stateReqList, STATE_NOTANS);
-//            broadcastMsgs("sr");
-//            timerCoordinator.start();
-//        }
     }
 
     private void initializeArrays() {
@@ -270,13 +264,15 @@ public class Worker {
                 rejectNextChange = true;
             else {
                 currentCommand = splits[1];
-                instanceNum = Integer.parseInt(splits[1].split(" ")[1]);
+                if (!currentState.equals(STATE_START))
+                    instanceNum = Integer.parseInt(splits[1].split(" ")[1]);
             }
         }
         else if (message.startsWith(PREFIX_PROCNUM)) {
             totalProcess = Integer.parseInt(splits[1]);
             terminalLog("total number of processes is "+totalProcess);
             initializeArrays();
+            setTimer();
             buildSocket();
             getReceivedMsgs(netController);
         }
@@ -327,7 +323,10 @@ public class Worker {
             currentState = STATE_VOTED;
 
             instanceNum = Integer.parseInt(splits[1]);
-            leader = senderId;
+            if (leader != senderId) {
+                oldLeader = leader;
+                leader = senderId;
+            }
             switch (splits[3]) {
                 case "add":
                     voteAddParticipant(splits[4]);
@@ -378,6 +377,10 @@ public class Worker {
                 voteRmCoordinator(splits[2]);
                 break;
             case "pl":
+                broadcastMsgs("pll");
+                printPlayList();
+                break;
+            case "pll":
                 printPlayList();
                 break;
             case "ir": // INITIAL_REQUEST
@@ -410,13 +413,38 @@ public class Worker {
                 countStateAck(senderId, splits[2]);
                 break;
             case "rr": // RECOVER_REQ
-                // TODO: timeout
                 timerCoordinator.stop();
                 int reqInstanceNum = Integer.parseInt(splits[2]);
-                unicastMsgs(senderId, "ra "+readLog(reqInstanceNum));
+                unicastMsgs(senderId, "ra "+reqInstanceNum+" "+readLog(reqInstanceNum));
+                // Coordinator broadcast
+                if (!currentState.equals(STATE_ABORT) &&
+                        !currentState.equals(STATE_COMMIT) &&
+                        !currentState.equals(STATE_START) && leader == processId) {
+                    if (reqInstanceNum == instanceNum) {
+                        if (splits[3].equals(STATE_ABORT))
+                            performAbort();
+                        else if (splits[3].equals(STATE_COMMIT))
+                            performCommit();
+                        else if (splits[3].equals(STATE_PRECOMMIT)) {
+                            logWrite(STATE_PRECOMMIT);
+                            waitAck();
+                            broadcastMsgs("pc");
+                        }
+                    }
+                }
                 break;
             case "ra": // RECOVER_REQ_ANS
                 // TODO: filter received messages
+                if (!currentState.equals(STATE_ABORT) &&
+                        !currentState.equals(STATE_COMMIT)) {
+                    int raInstanceNum = Integer.parseInt(splits[2]);
+                    if (raInstanceNum == instanceNum) {
+                        if (splits[3].equals(STATE_ABORT))
+                            performAbort();
+                        else if (splits[3].equals(STATE_COMMIT))
+                            performCommit();
+                    }
+                }
                 break;
             case "pm": // partial message
                 msgCounter = 0;
@@ -471,9 +499,6 @@ public class Worker {
      * Print local playlist to storage
      */
     private void printPlayList() {
-        if (processId == leader)
-            broadcastMsgs("pl");
-
         try {
             File playlistFile = new File(String.format("../log/playlist_%d.txt", processId));
             playlistFile.getParentFile().mkdirs();
@@ -600,7 +625,7 @@ public class Worker {
      * Wait participants to vote
      */
     public void waitVote() {
-        logWrite(PREFIX_COMMAND+"# "+currentCommand);
+        //logWrite(PREFIX_COMMAND+"# "+currentCommand);
         timerCoordinator.start();
         voteNum = 0;
         decision = 1;
@@ -629,8 +654,8 @@ public class Worker {
                 if (voteNum == totalProcess-1 && decision == 1) {
                     timerCoordinator.stop();
                     logWrite(STATE_PRECOMMIT);
-                    broadcastMsgs("pc");
                     waitAck();
+                    broadcastMsgs("pc");
                 }
             }
         }
@@ -640,10 +665,10 @@ public class Worker {
      * Wait participants to reply ACK
      */
     public void waitAck() {
-        timerCoordinator.start();
         ackNum = 0;
         currentState = STATE_WAITACK;
         Arrays.fill(hasRespond, false);
+        timerCoordinator.start();
     }
 
     /**
@@ -668,7 +693,6 @@ public class Worker {
      * Perform COMMIT operation
      */
     public void performCommit() {
-        terminalLog(currentCommand + " " + currentState);
         timerCoordinator.stop();
         timerParticipant.stop();
         
@@ -690,6 +714,7 @@ public class Worker {
                 remove(splits[4]);
                 break;
             default:
+                terminalLog("current command is "+currentCommand+", splits[3] is "+splits[3]);
                 break;
         }
 
@@ -724,6 +749,7 @@ public class Worker {
         }
         logWrite(STATE_ABORT);
         currentState = STATE_ABORT;
+        if (currentCommand.equals("")) instanceNum++;
 
         currentCommand = "";
         voteNum = ackNum = 0;
@@ -761,8 +787,8 @@ public class Worker {
         currentState = STATE_START;
         instanceNum ++;
         logWrite(PREFIX_START + instanceNum);
+        logWrite(PREFIX_COMMAND + "# " + instanceNum + " " + currentCommand);
         if (playlist.containsKey(songName) || rejectNextChange) {
-            logWrite(PREFIX_COMMAND + "# " + currentCommand);
             performAbort();
         } else {
             currentState = STATE_WAITVOTE;
@@ -797,7 +823,7 @@ public class Worker {
      */
     public void add(String songName, String URL) {
         playlist.put(songName, URL);
-        terminalLog("add <" + songName + "," + URL + ">");
+        terminalLog("add <" + songName + ", " + URL + ">");
     }
 
     /**
@@ -806,13 +832,13 @@ public class Worker {
      */
     public void voteRmCoordinator(String songName) {
         currentState = STATE_START;
-        logWrite(STATE_START);
+        logWrite(PREFIX_START + instanceNum);
+        logWrite(PREFIX_COMMAND + "# " + instanceNum + " " + currentCommand);
         if (playlist.containsKey(songName) && !rejectNextChange) {
             currentState = STATE_WAITVOTE;
             broadcastMsgs(instanceNum+" vr rm " + songName);
             waitVote();
         } else {
-            logWrite(PREFIX_COMMAND + "# " + currentCommand);
             performAbort();
         }
         rejectNextChange = false;
@@ -851,13 +877,13 @@ public class Worker {
      */
     public void voteEditCoordinator(String songName, String newSongName, String URL) {
         currentState = STATE_START;
-        logWrite(STATE_START);
+        logWrite(PREFIX_START + instanceNum);
+        logWrite(PREFIX_COMMAND + "# " + instanceNum + " " + currentCommand);
         if (playlist.containsKey(songName) && !playlist.containsKey(newSongName) && !rejectNextChange) {
             currentState = STATE_WAITVOTE;
             broadcastMsgs(instanceNum+" vr e " + songName + " " + newSongName + " " + URL);
             waitVote();
         } else {
-            logWrite(PREFIX_COMMAND + "# " + currentCommand);
             performAbort();
         }
         rejectNextChange = false;
