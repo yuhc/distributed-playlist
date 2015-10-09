@@ -30,6 +30,7 @@ public class Worker {
     private Boolean[] hasRespond;
     private Boolean   rejectNextChange;
     private Boolean[] stateReqAck;
+    private Boolean[] processAlive;
     private String[]  stateReqList;
     private int       stateReqAckNum;
 
@@ -202,6 +203,8 @@ public class Worker {
     }
 
     private void initializeArrays() {
+        processAlive = new Boolean[totalProcess+1];
+        Arrays.fill(processAlive, true);
         voteStats = new Boolean[totalProcess+1];
         Arrays.fill(voteStats, false);
         voteNum = 0;
@@ -271,19 +274,25 @@ public class Worker {
             currentCommand = message;
             logWrite(PREFIX_COMMAND+message);
             currentState = STATE_VOTED;
+            String aliveProcessList = splits[splits.length-1];
             instanceNum = Integer.parseInt(splits[1]);
             if (totalProcess == 0) {
+                String[] aliveProcesses = aliveProcessList.split(",");
+                totalProcess = Integer.parseInt(aliveProcesses[aliveProcesses.length-1]);
                 logWrite(PREFIX_PROCNUM+totalProcess);
             }
             leader = senderId;
             switch (splits[3]) {
                 case "add":
+                    updateProcessList(aliveProcessList);
                     voteAddParticipant(splits[4]);
                     break;
                 case "e":
+                    updateProcessList(aliveProcessList);
                     voteEditParticipant(splits[4], splits[5]);
                     break;
                 case "rm":
+                    updateProcessList(aliveProcessList);
                     voteRmParticipant(splits[4]);
                     break;
                 default:
@@ -331,7 +340,7 @@ public class Worker {
                 break;
             case "sa": // STATE_ACK
                 int totalProcessNum = Integer.parseInt(splits[2]);
-                countStateAck(senderId, totalProcessNum, splits[3]);
+                countStateAck(senderId, totalProcessNum, splits[3], splits[4]);
                 break;
             case "pm": // partial message
                 msgCounter = 0;
@@ -380,8 +389,9 @@ public class Worker {
         }
     }
 
-    public void countStateAck(int senderId, int totalProcessNum, String state) {
+    public void countStateAck(int senderId, int totalProcessNum, String state, String aliveList) {
         if (reBuild == 0) { // initial
+            updateProcessList(aliveList);
             logWrite(PREFIX_PROCNUM+totalProcessNum);
             if (totalProcess == 0) {
                 totalProcess = totalProcessNum;
@@ -567,6 +577,56 @@ public class Worker {
                 System.exit(0);
             }
         }
+    }
+
+    /**
+     * Build alive process list
+     * @return
+     */
+    private String aliveProcessList() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 1; i <= totalProcess; i++) {
+            if (processAlive[i]) {
+                sb.append(i);
+                sb.append(",");
+            }
+        }
+        sb.deleteCharAt(sb.length() - 1);
+        return sb.toString();
+    }
+
+    /**
+     * Update alive process list using "1,2,3"
+     * @param newList
+     */
+    public void updateProcessList(String newList) {
+        String[] newSplits = newList.split(",");
+        Arrays.fill(processAlive, false);
+        for (int i = 0; i < newSplits.length; i++)
+            processAlive[Integer.parseInt(newSplits[i])] = true;
+        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
+    }
+
+    public void setProcessAlive(String processStr) {
+        int processId = Integer.parseInt(processStr);
+        processAlive[processId] = true;
+        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
+    }
+
+    public void setProcessAlive(int processId) {
+        processAlive[processId] = true;
+        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
+    }
+
+    public void setProcessDead(String processStr) {
+        int processId = Integer.parseInt(processStr);
+        processAlive[processId] = false;
+        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
+    }
+
+    public void setProcessDead(int processId) {
+        processAlive[processId] = false;
+        //logWrite(PREFIX_ALIVEPROC+aliveProcessList());
     }
 
     /**
