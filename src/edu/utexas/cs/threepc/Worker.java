@@ -24,7 +24,7 @@ public class Worker {
     private String currentState;
 
     private int       viewNumber;
-    private Boolean[] aliveProcess;
+    private Boolean[] processAlive;
 
     private Boolean[] voteStats;
     private int       voteNum;
@@ -183,7 +183,7 @@ public class Worker {
                         break;
                     // Wait STATE_REQ from new coordinator
                     case STATE_SELETC:
-                        aliveProcess[viewNumber] = false;
+                        processAlive[viewNumber] = false;
                         electCoordinator();
                         break;
                     default: // TODO: Termination protocol here?
@@ -212,8 +212,8 @@ public class Worker {
     }
 
     private void initializeArrays() {
-        aliveProcess = new Boolean[totalProcess+1];
-        Arrays.fill(aliveProcess, true);
+        processAlive = new Boolean[totalProcess+1];
+        Arrays.fill(processAlive, true);
         voteStats = new Boolean[totalProcess+1];
         Arrays.fill(voteStats, false);
         voteNum = 0;
@@ -283,19 +283,25 @@ public class Worker {
             currentCommand = message;
             logWrite(PREFIX_COMMAND+message);
             currentState = STATE_VOTED;
+            String processAliveList = splits[splits.length-1];
             instanceNum = Integer.parseInt(splits[1]);
             if (totalProcess == 0) {
+                String[] processAlivees = processAliveList.split(",");
+                totalProcess = Integer.parseInt(processAlivees[processAlivees.length-1]);
                 logWrite(PREFIX_PROCNUM+totalProcess);
             }
             leader = senderId;
             switch (splits[3]) {
                 case "add":
+                    updateProcessList(processAliveList);
                     voteAddParticipant(splits[4]);
                     break;
                 case "e":
+                    updateProcessList(processAliveList);
                     voteEditParticipant(splits[4], splits[5]);
                     break;
                 case "rm":
+                    updateProcessList(processAliveList);
                     voteRmParticipant(splits[4]);
                     break;
                 default:
@@ -354,7 +360,7 @@ public class Worker {
                 if (senderId == oldLeader) break;
                 timer.stop();
                 for (int i = 1; i < senderId; i++)
-                    aliveProcess[i] = false;
+                    processAlive[i] = false;
                 oldLeader = leader;
                 leader = senderId;
                 unicastMsgs(senderId, "sa "+currentState);
@@ -475,7 +481,7 @@ public class Worker {
      */
     private void electCoordinator() {
         viewNumber = 1;
-        while (!aliveProcess[viewNumber]) {
+        while (!processAlive[viewNumber]) {
             viewNumber++;
             if (viewNumber > totalProcess) viewNumber = 1;
         }
@@ -624,6 +630,56 @@ public class Worker {
                 System.exit(0);
             }
         }
+    }
+
+    /**
+     * Build alive process list
+     * @return
+     */
+    private String processAliveList() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 1; i <= totalProcess; i++) {
+            if (processAlive[i]) {
+                sb.append(i);
+                sb.append(",");
+            }
+        }
+        sb.deleteCharAt(sb.length() - 1);
+        return sb.toString();
+    }
+
+    /**
+     * Update alive process list using "1,2,3"
+     * @param newList
+     */
+    public void updateProcessList(String newList) {
+        String[] newSplits = newList.split(",");
+        Arrays.fill(processAlive, false);
+        for (int i = 0; i < newSplits.length; i++)
+            processAlive[Integer.parseInt(newSplits[i])] = true;
+        //logWrite(PREFIX_ALIVEPROC+processAliveList());
+    }
+
+    public void setProcessAlive(String processStr) {
+        int processId = Integer.parseInt(processStr);
+        processAlive[processId] = true;
+        //logWrite(PREFIX_ALIVEPROC+processAliveList());
+    }
+
+    public void setProcessAlive(int processId) {
+        processAlive[processId] = true;
+        //logWrite(PREFIX_ALIVEPROC+processAliveList());
+    }
+
+    public void setProcessDead(String processStr) {
+        int processId = Integer.parseInt(processStr);
+        processAlive[processId] = false;
+        //logWrite(PREFIX_ALIVEPROC+processAliveList());
+    }
+
+    public void setProcessDead(int processId) {
+        processAlive[processId] = false;
+        //logWrite(PREFIX_ALIVEPROC+processAliveList());
     }
 
     /**
