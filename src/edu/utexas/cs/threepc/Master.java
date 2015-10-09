@@ -79,13 +79,16 @@ public class Master {
      * Receive messgaes
      * @param netController
      */
-    private static void getReceivedMsgs(final NetController netController) {
+    private void getReceivedMsgs(final NetController netController) {
         new Thread(new Runnable() {
             public void run() {
                 while (true) {
                     List<String> receivedMsgs = new ArrayList<String>(netController.getReceivedMsgs());
                     for (int i = 0; i < receivedMsgs.size(); i++) {
                         System.err.println(String.format("[MASTER] receive %s", receivedMsgs.get(i)));
+                        if (receivedMsgs.get(i).endsWith("nl")) {
+                            leader = Integer.parseInt(receivedMsgs.get(i).split(" ")[0]);
+                        }
                     }
                 }
             }

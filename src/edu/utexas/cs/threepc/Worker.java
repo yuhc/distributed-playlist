@@ -265,7 +265,7 @@ public class Worker {
         }
         else if (message.startsWith(PREFIX_START)) {
             leader = processId;
-            instanceNum = Integer.parseInt(splits[0]);
+            instanceNum = Integer.parseInt(splits[1]);
         }
         else if (!message.startsWith(STATE_RECOVER)){
             // TODO: I think recovery is not fully implemented.
@@ -303,7 +303,6 @@ public class Worker {
             logWrite(STATE_VOTEREQ);
             currentState = STATE_VOTED;
 
-            String processAliveList = splits[splits.length-1];
             instanceNum = Integer.parseInt(splits[1]);
             leader = senderId;
             switch (splits[3]) {
@@ -329,6 +328,7 @@ public class Worker {
                 performAbort();
                 break;
             case "pc": // PRECOMMIT
+                timer.stop();
                 logWrite(STATE_PRECOMMIT);
                 sendAcknowledge();
                 break;
@@ -367,15 +367,17 @@ public class Worker {
             case "ue": // UR_ELECTED
                 if (leader != processId) oldLeader = leader;
                 leader = processId;
+                unicastMsgs(0, "nl"); // newLeader
                 termination();
                 break;
             case "sr": // STATE_REQ
-                if (senderId == oldLeader) break;
                 timer.stop();
-                for (int i = 1; i < senderId; i++)
-                    processAlive[i] = false;
-                oldLeader = leader;
-                leader = senderId;
+                if (senderId != oldLeader) {
+                    for (int i = 1; i < senderId; i++)
+                        processAlive[i] = false;
+                    oldLeader = leader;
+                    leader = senderId;
+                }
                 unicastMsgs(senderId, "sa "+currentState);
                 break;
             case "sa": // STATE_ACK
@@ -489,6 +491,7 @@ public class Worker {
         stateReqAckNum++;
         hasRespond[senderId] = true;
         stateReqList[senderId] = state;
+        processAlive[senderId] = true;
         if (stateReqAckNum == totalProcess - 1) {
             timer.stop();
             // TR1
@@ -727,13 +730,17 @@ public class Worker {
         if (playlist.containsKey(songName) || rejectNextChange) {
             performAbort();
             String msg = String.format("%d v no", processId);
-            if (canSendMsg)
+            if (canSendMsg) {
                 netController.sendMsg(leader, msg);
+            }
         } else {
             logWrite(PREFIX_VOTE + "YES");
             String msg = String.format("%d v yes", processId);
-            if (canSendMsg)
+            if (canSendMsg) {
+                currentState = STATE_VOTED;
+                timer.start();
                 netController.sendMsg(leader, msg);
+            }
         }
         rejectNextChange = false;
         checkPartialMsg();
@@ -771,8 +778,11 @@ public class Worker {
         if (playlist.containsKey(songName) && !rejectNextChange) {
             logWrite(PREFIX_VOTE + "YES");
             String msg = String.format("%d v yes", processId);
-            if (canSendMsg)
+            if (canSendMsg) {
+                currentState = STATE_VOTED;
+                timer.start();
                 netController.sendMsg(leader, msg);
+            }
         } else {
             performAbort();
             String msg = String.format("%d v no", processId);
@@ -815,8 +825,11 @@ public class Worker {
         if (playlist.containsKey(songName) && !playlist.containsKey(newSongName) && !rejectNextChange) {
             logWrite(PREFIX_VOTE + "YES");
             String msg = String.format("%d v yes", processId);
-            if (canSendMsg)
+            if (canSendMsg) {
+                currentState = STATE_VOTED;
+                timer.start();
                 netController.sendMsg(leader, msg);
+            }
         } else {
             performAbort();
             String msg = String.format("%d v no", processId);
@@ -861,6 +874,7 @@ public class Worker {
      * @param instruction
      */
     private void unicastMsgs(int destId, String instruction) {
+        // TODO: add a parameter to check whether checkPartialMsg
         String msg = String.format("%d %s", processId, instruction);
         if (canSendMsg)
             netController.sendMsg(destId, msg);
