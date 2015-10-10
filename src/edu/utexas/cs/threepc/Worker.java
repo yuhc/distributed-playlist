@@ -376,7 +376,7 @@ public class Worker {
                 break;
             case "rnc":
                 rejectNextChange = true;
-                logWrite(PREFIX_COMMAND+"rnc");
+                //logWrite(PREFIX_COMMAND+"rnc");
                 break;
             case "pl":
                 broadcastMsgs("pll");
@@ -447,8 +447,15 @@ public class Worker {
                         else if (splits[3].equals(STATE_COMMIT))
                             performCommit();
                     }
-                    if (currentState.equals(STATE_PRECOMMIT) || splits[3].equals(STATE_PRECOMMIT))
+                    if (currentState.equals(STATE_PRECOMMIT) || splits[3].equals(STATE_PRECOMMIT)) {
+                        if (!timerCoordinator.isRunning()) {
+                            if (!currentState.equals(STATE_PRECOMMIT))
+                                logWrite(STATE_PRECOMMIT);
+                            waitAck();
+                            broadcastMsgs("pc");
+                        }
                         break;
+                    }
                     if (splits[3].equals(STATE_ABORT) || splits[3].equals(STATE_COMMIT))
                         break;
                     boolean anyCertain = false;
