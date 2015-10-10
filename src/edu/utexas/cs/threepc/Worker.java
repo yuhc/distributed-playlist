@@ -134,6 +134,7 @@ public class Worker {
                             currentState.equals(STATE_PRECOMMIT) ||
                             currentState.equals(STATE_START)) {
                         // TODO: ask other process for help
+                        isRecover = false;
                         broadcastMsgs("rr "+instanceNum+" "+currentState);
                     }
                 }
@@ -178,12 +179,12 @@ public class Worker {
                             if (i != processId && !hasRespond[i]) {
                                 terminalLog(String.format("participant %d times out", i));
                             }
-                        logWrite(STATE_ACKED);
+                        if (!currentState.equals(STATE_COMMIT))
+                            logWrite(STATE_ACKED);
 
                         for (int i = 1; i <= totalProcess; i++)
                             if (i != processId && hasRespond[i])
                                 unicastMsgs(i, "c");
-                        //currentCommand = "# " + currentCommand; // format the command
                         performCommit();
                         break;
                     // New coordinator waits for STATE_REQ ANS
@@ -291,7 +292,7 @@ public class Worker {
             switch (message) {
                 case STATE_ABORT:
                     currentCommand = "";
-                    currentState = message;
+                    currentState = STATE_ABORT;
                     break;
                 case STATE_VOTEREQ:
                     currentState = STATE_VOTEREQ;
@@ -299,7 +300,7 @@ public class Worker {
                 case STATE_COMMIT:
                     performCommit();
                     currentCommand = "";
-                    currentState = message;
+                    currentState = STATE_COMMIT;
                     break;
                 case STATE_PRECOMMITED:
                 case STATE_PRECOMMIT:
@@ -351,7 +352,8 @@ public class Worker {
                 break;
             case "pc": // PRECOMMIT
                 timerParticipant.stop();
-                logWrite(STATE_PRECOMMIT);
+                if (!currentState.equals(STATE_COMMIT))
+                    logWrite(STATE_PRECOMMIT);
                 sendAcknowledge();
                 break;
             case "ack":
@@ -713,7 +715,8 @@ public class Worker {
         if (!ackStats[senderId]) {
             if (ackNum == totalProcess-1) {
                 timerCoordinator.stop();
-                logWrite(STATE_ACKED);
+                if (!currentState.equals(STATE_COMMIT))
+                    logWrite(STATE_ACKED);
                 broadcastMsgs("c");
                 //currentCommand = "# " + currentCommand; // format the command
                 performCommit();
@@ -737,7 +740,7 @@ public class Worker {
         String[] splits = currentCommand.split(" ");
         int base = 3;
         if (splits[2].equals("vr")) base++;
-        if (!splits[1].equals("0") && processId == leader) base = 2;
+        else if (!splits[1].equals("0") && processId == leader) base = 2;
         switch (splits[base-1]) {
             case "add":
                 add(splits[base], splits[base+1]);
@@ -749,7 +752,7 @@ public class Worker {
                 remove(splits[base]);
                 break;
             default:
-                terminalLog("current command is " + currentCommand + ", splits[3] is " + splits[base-1]);
+                terminalLog("current command is " + currentCommand + ", splits["+(base-1)+"] is " + splits[base-1]);
                 break;
         }
 
@@ -956,7 +959,8 @@ public class Worker {
     }
 
     public void sendAcknowledge() {
-        currentState = STATE_PRECOMMIT;
+        if (!currentState.equals(STATE_COMMIT))
+            currentState = STATE_PRECOMMIT;
         timerParticipant.start();
         unicastMsgs(leader, "ack");
     }
