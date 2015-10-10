@@ -140,8 +140,6 @@ public class Master {
         for (int i = 1; i <= totalProcess; i++) {
             kill(i);
         }
-        processList.clear();
-        totalProcess = leader = 0;
         netController.shutdown();
     }
 
@@ -210,7 +208,7 @@ public class Master {
     }
 
     public void allClear() {
-
+        netController.sendMsg(leader, "0 ac");
     }
 
     public void rejectNextChange(int processId) {
